@@ -1,0 +1,23 @@
+[tools]
+node = "26"
+zune = { version = "0.5.7", matching = "zune" }
+
+[tool_alias]
+zune = "github:Scythe-Technology/Zune"
+
+[tasks.install]
+description = "Install Node dependencies"
+run = "npm install"
+
+[tasks.check]
+description = "Run typecheck, tests, build, and audit"
+run = [
+  "npm run typecheck",
+  "npm test",
+  "npm run build",
+  "npm audit --audit-level=low",
+]
+
+[tasks.dev]
+description = "Start the UI Claps preview server"
+run = "npm run dev"
