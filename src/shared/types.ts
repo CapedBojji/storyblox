@@ -1,7 +1,19 @@
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
-export type ControlType = "string" | "boolean" | "number" | "slider" | "color" | "select";
+export type ControlType =
+  | "string"
+  | "boolean"
+  | "number"
+  | "slider"
+  | "color"
+  | "select"
+  | "radio"
+  | "check"
+  | "multiselect"
+  | "object"
+  | "udim"
+  | "udim2";
 
 export interface ControlDefinition {
   type: ControlType;
@@ -11,7 +23,14 @@ export interface ControlDefinition {
   min?: number;
   max?: number;
   step?: number;
+  scaleMin?: number;
+  scaleMax?: number;
+  scaleStep?: number;
+  offsetMin?: number;
+  offsetMax?: number;
+  offsetStep?: number;
   options?: Array<{ label: string; value: JsonValue }>;
+  inline?: boolean;
 }
 
 export interface StoryManifest {
@@ -81,6 +100,11 @@ export interface RobloxNumberSequence {
   keypoints: Array<{ time: number; value: number }>;
 }
 
+export interface RobloxFont {
+  $type: "Font";
+  family?: RobloxEnumItem | string;
+}
+
 export type RobloxSerializedValue =
   | JsonPrimitive
   | RobloxEnumItem
@@ -90,6 +114,7 @@ export type RobloxSerializedValue =
   | RobloxVector2
   | RobloxColorSequence
   | RobloxNumberSequence
+  | RobloxFont
   | RobloxSerializedValue[]
   | { [key: string]: RobloxSerializedValue };
 
@@ -118,4 +143,9 @@ export interface RenderResponse {
 export interface ApiErrorResponse {
   message: string;
   details?: string;
+}
+
+export interface ProjectUpdateEvent {
+  type: "project-update";
+  version: number;
 }

@@ -1,30 +1,284 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactElement } from "react";
-import type { ControlDefinition, JsonValue, ProjectManifest, RenderResponse, StoryManifest } from "../shared/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from "react";
+import {
+  Bookmark,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Eye,
+  FileText,
+  Folder,
+  Grid3x3,
+  LayoutGrid,
+  Link,
+  Maximize,
+  Minimize,
+  Monitor,
+  Moon,
+  Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
+  Ruler,
+  Scan,
+  Search,
+  Smartphone,
+  Sun,
+  TriangleAlert,
+  ZoomIn,
+  ZoomOut,
+  type LucideIcon,
+} from "lucide-react";
+import type {
+  ControlDefinition,
+  JsonValue,
+  ProjectUpdateEvent,
+  ProjectManifest,
+  RenderResponse,
+  RobloxUDim,
+  StoryManifest,
+} from "../shared/types";
 import { fetchProject, renderStory } from "./api";
 import { RobloxRenderer } from "./renderer/RobloxRenderer";
 import { collectRendererWarnings } from "./renderer/warnings";
 import { color3ToHex, hexToColor3 } from "./renderer/style";
+import { buildStoryTree, findStoryNodePath, type StoryTreeNode } from "./storyTree";
 
 type ControlValues = Record<string, JsonValue>;
 
+type Theme = "system" | "light" | "dark";
+type AddonTab = "controls" | "warnings";
+type CanvasBackground = "light" | "dark" | "checkerboard";
+
+const CANVAS_BG_ORDER: Record<CanvasBackground, CanvasBackground> = {
+  light: "dark",
+  dark: "checkerboard",
+  checkerboard: "light",
+};
+
+const CANVAS_BG_LABEL: Record<CanvasBackground, string> = {
+  light: "Light",
+  dark: "Dark",
+  checkerboard: "Checkerboard",
+};
+
+type VisionFilter = "none" | "blur" | "grayscale" | "deuteranopia" | "protanopia" | "tritanopia";
+
+const VISION_ORDER: Record<VisionFilter, VisionFilter> = {
+  none: "blur",
+  blur: "grayscale",
+  grayscale: "deuteranopia",
+  deuteranopia: "protanopia",
+  protanopia: "tritanopia",
+  tritanopia: "none",
+};
+
+const VISION_LABEL: Record<VisionFilter, string> = {
+  none: "None",
+  blur: "Blurred",
+  grayscale: "Grayscale",
+  deuteranopia: "Deuteranopia",
+  protanopia: "Protanopia",
+  tritanopia: "Tritanopia",
+};
+
+const VIEWPORT_PRESETS = [
+  { id: "responsive", label: "Responsive", width: 0, height: 0 },
+  { id: "hd", label: "1920 × 1080", width: 1920, height: 1080 },
+  { id: "laptop", label: "1280 × 720", width: 1280, height: 720 },
+  { id: "tablet", label: "1024 × 768", width: 1024, height: 768 },
+  { id: "phone", label: "812 × 375", width: 812, height: 375 },
+] as const;
+
+interface MeasureBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  label: string;
+}
+
+function initialUrlParams(): URLSearchParams {
+  try {
+    return new URLSearchParams(window.location.search);
+  } catch {
+    return new URLSearchParams();
+  }
+}
+
+const THEME_KEY = "ui-claps-theme";
+const SIDEBAR_KEY = "ui-claps-sidebar-collapsed";
+const EXPANDED_NODES_KEY = "ui-claps-expanded-story-nodes";
+
+const THEME_ORDER: Record<Theme, Theme> = {
+  system: "light",
+  light: "dark",
+  dark: "system",
+};
+
+const THEME_META: Record<Theme, { icon: LucideIcon; label: string }> = {
+  system: { icon: Monitor, label: "System" },
+  light: { icon: Sun, label: "Light" },
+  dark: { icon: Moon, label: "Dark" },
+};
+
+function systemTheme(): "light" | "dark" {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function readStoredTheme(): Theme {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+  } catch {
+    /* ignore */
+  }
+  return "system";
+}
+
+function applyTheme(theme: Theme): void {
+  document.documentElement.dataset.theme = theme === "system" ? systemTheme() : theme;
+}
+
+function readStoredSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function readStoredExpandedNodes(): Set<string> {
+  try {
+    const stored = localStorage.getItem(EXPANDED_NODES_KEY);
+    const parsed: unknown = stored ? JSON.parse(stored) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((value) => typeof value === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 export function App(): ReactElement {
   const [project, setProject] = useState<ProjectManifest | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => initialUrlParams().get("story"),
+  );
   const [controls, setControls] = useState<ControlValues>({});
   const [rendered, setRendered] = useState<RenderResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readStoredSidebarCollapsed);
+  const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(readStoredExpandedNodes);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [addonTab, setAddonTab] = useState<AddonTab>("controls");
+  const [zoom, setZoom] = useState(1);
+  const [canvasBg, setCanvasBg] = useState<CanvasBackground>("light");
+  const [fullscreen, setFullscreen] = useState(() => initialUrlParams().get("full") === "1");
+  const [gridOn, setGridOn] = useState(false);
+  const [outlineOn, setOutlineOn] = useState(false);
+  const [measureOn, setMeasureOn] = useState(false);
+  const [measureBox, setMeasureBox] = useState<MeasureBox | null>(null);
+  const [vision, setVision] = useState<VisionFilter>("none");
+  const [viewportIndex, setViewportIndex] = useState(0);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [hotReloadVersion, setHotReloadVersion] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      searchInputRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     void loadProject();
   }, []);
 
+  useEffect(() => {
+    const events = new EventSource("/api/events");
+    events.addEventListener("project-update", (event) => {
+      try {
+        const update = JSON.parse((event as MessageEvent<string>).data) as ProjectUpdateEvent;
+        setHotReloadVersion(update.version);
+      } catch {
+        setHotReloadVersion((version) => version + 1);
+      }
+      void loadProject({ showLoading: false });
+    });
+    events.onerror = () => {
+      /* EventSource reconnects automatically. */
+    };
+    return () => events.close();
+  }, []);
+
+  useEffect(() => {
+    applyTheme(theme);
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      /* ignore */
+    }
+    if (theme !== "system") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (): void => applyTheme("system");
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, [theme]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(sidebarCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(EXPANDED_NODES_KEY, JSON.stringify(Array.from(expandedNodeIds).sort()));
+    } catch {
+      /* ignore */
+    }
+  }, [expandedNodeIds]);
+
   const selectedStory = useMemo(
     () => project?.stories.find((story) => story.id === selectedId) ?? project?.stories[0] ?? null,
     [project, selectedId],
   );
+
+  // Keep the story id in the URL so links can be copied/shared, and mirror
+  // the story name into the tab title.
+  useEffect(() => {
+    if (!selectedStory) return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("story", selectedStory.id);
+      window.history.replaceState(null, "", url);
+    } catch {
+      /* ignore */
+    }
+    document.title = `${selectedStory.name} ⋅ UI Claps`;
+    setLinkCopied(false);
+  }, [selectedStory?.id, selectedStory?.name]);
 
   useEffect(() => {
     if (!selectedStory) return;
@@ -35,25 +289,51 @@ export function App(): ReactElement {
   useEffect(() => {
     if (!selectedStory) return;
     void runRender(selectedStory, controls);
-  }, [selectedStory?.id, JSON.stringify(controls)]);
+  }, [selectedStory?.id, JSON.stringify(controls), hotReloadVersion]);
 
   const rendererWarnings = useMemo(
     () => (rendered?.tree ? collectRendererWarnings(rendered.tree) : []),
     [rendered?.tree],
   );
 
-  const groupedStories = useMemo(() => {
-    const groups = new Map<string, StoryManifest[]>();
-    for (const story of project?.stories ?? []) {
-      const existing = groups.get(story.group) ?? [];
-      existing.push(story);
-      groups.set(story.group, existing);
-    }
-    return groups;
-  }, [project?.stories]);
+  const combinedWarnings = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...(project?.warnings ?? []),
+          ...(rendered?.warnings ?? []),
+          ...rendererWarnings,
+        ]),
+      ),
+    [project?.warnings, rendered?.warnings, rendererWarnings],
+  );
 
-  async function loadProject(): Promise<void> {
-    setLoading(true);
+  const storyTree = useMemo(
+    () => buildStoryTree(project?.stories ?? [], searchQuery),
+    [project?.stories, searchQuery],
+  );
+  const fullStoryTree = useMemo(() => buildStoryTree(project?.stories ?? []), [project?.stories]);
+
+  useEffect(() => {
+    if (!selectedStory) return;
+    const path = findStoryNodePath(fullStoryTree, selectedStory.id).slice(0, -1);
+    if (path.length === 0) return;
+
+    setExpandedNodeIds((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const nodeId of path) {
+        if (next.has(nodeId)) continue;
+        next.add(nodeId);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [fullStoryTree, selectedStory]);
+
+  async function loadProject(options: { showLoading?: boolean } = {}): Promise<void> {
+    const showLoading = options.showLoading ?? true;
+    if (showLoading) setLoading(true);
     setError(null);
 
     try {
@@ -63,7 +343,7 @@ export function App(): ReactElement {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }
 
@@ -81,148 +361,641 @@ export function App(): ReactElement {
     }
   }
 
+  const ThemeIcon = THEME_META[theme].icon;
+  const controlEntries = selectedStory ? Object.entries(selectedStory.controls) : [];
+  const addonCounts: Record<AddonTab, number> = {
+    controls: controlEntries.length,
+    warnings: combinedWarnings.length,
+  };
+
+  const viewportPreset = VIEWPORT_PRESETS[viewportIndex] ?? VIEWPORT_PRESETS[0];
+  const stageStyle: CSSProperties = {};
+  if (zoom !== 1) stageStyle.transform = `scale(${zoom})`;
+  if (viewportPreset.width > 0) {
+    stageStyle.width = viewportPreset.width;
+    stageStyle.height = viewportPreset.height;
+  }
+  const stageClassName = [
+    "preview-zoom",
+    outlineOn ? "outlines" : "",
+    viewportPreset.width > 0 ? "viewport-fixed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const bandClassName = [
+    "preview-band",
+    `bg-${canvasBg}`,
+    gridOn ? "grid-on" : "",
+    vision !== "none" ? `vision-${vision}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  function handleRemount(): void {
+    if (selectedStory) void runRender(selectedStory, controls);
+  }
+
+  function handleCopyLink(): void {
+    navigator.clipboard.writeText(window.location.href).then(
+      () => {
+        setLinkCopied(true);
+        window.setTimeout(() => setLinkCopied(false), 1600);
+      },
+      () => setLinkCopied(false),
+    );
+  }
+
+  function handleOpenCanvasTab(): void {
+    if (!selectedStory) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("story", selectedStory.id);
+    url.searchParams.set("full", "1");
+    window.open(url.toString(), "_blank", "noopener");
+  }
+
+  function toggleNode(nodeId: string): void {
+    setExpandedNodeIds((current) => {
+      const next = new Set(current);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }
+
+  const shellClassName = [
+    "app-shell",
+    sidebarCollapsed ? "sidebar-collapsed" : "",
+    fullscreen ? "fullscreen" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className={shellClassName}>
+      <aside className={sidebarCollapsed ? "sidebar collapsed" : "sidebar"}>
         <div className="brand">
-          <div>
-            <h1>UI Claps</h1>
-            <p>{project ? `${project.stories.length} stories` : "Loading stories"}</p>
+          <div className="brand-identity">
+            <div>
+              <h1>UI Claps</h1>
+              <p>{project ? `${project.stories.length} stories` : "Loading stories"}</p>
+            </div>
           </div>
-          <button className="icon-button" type="button" onClick={() => void loadProject()} title="Refresh stories">
-            ↻
-          </button>
+          <div className="brand-actions">
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setSidebarCollapsed((current) => !current)}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="story-sidebar-list"
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen size={15} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={15} strokeWidth={2} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              className="icon-button refresh-button"
+              type="button"
+              onClick={() => void loadProject()}
+              title="Refresh stories"
+              aria-label="Refresh stories"
+            >
+              <RefreshCw size={15} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
-        <nav className="story-list" aria-label="Stories">
+        <label className="sidebar-search">
+          <Search size={13} strokeWidth={2} aria-hidden="true" />
+          <input
+            ref={searchInputRef}
+            type="search"
+            placeholder="Find components"
+            aria-label="Find components"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setSearchQuery("");
+                event.currentTarget.blur();
+              }
+            }}
+          />
+          <kbd aria-hidden="true">/</kbd>
+        </label>
+
+        <nav className="story-list" id="story-sidebar-list" aria-label="Stories">
           {loading ? <div className="empty-state">Scanning project...</div> : null}
           {!loading && project?.stories.length === 0 ? (
             <div className="empty-state">No stories found.</div>
           ) : null}
-          {Array.from(groupedStories.entries()).map(([group, stories]) => (
-            <section className="story-group" key={group}>
-              <h2>{group}</h2>
-              {stories.map((story) => (
-                <button
-                  className={story.id === selectedStory?.id ? "story-link active" : "story-link"}
-                  key={story.id}
-                  type="button"
-                  onClick={() => setSelectedId(story.id)}
-                >
-                  <span>{story.name}</span>
-                  <small>{story.relativePath}</small>
-                </button>
-              ))}
-            </section>
+          {!loading && project && project.stories.length > 0 && storyTree.length === 0 ? (
+            <div className="empty-state">No stories match &ldquo;{searchQuery}&rdquo;.</div>
+          ) : null}
+          {storyTree.map((node) => (
+            <StoryTreeItem
+              key={node.id}
+              node={node}
+              depth={0}
+              expandedNodeIds={expandedNodeIds}
+              forceExpanded={searchQuery.trim().length > 0}
+              selectedStoryId={selectedStory?.id ?? null}
+              onToggle={toggleNode}
+              onSelect={setSelectedId}
+            />
           ))}
         </nav>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
-          <div>
-            <h2>{selectedStory?.name ?? "No story selected"}</h2>
-            <p>{selectedStory?.relativePath ?? "Create a .story.luau file to begin."}</p>
+          <div className="topbar-tools">
+            <div className="toolbar-group" role="group" aria-label="Story canvas">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={handleRemount}
+                title="Remount story"
+                aria-label="Remount story"
+              >
+                <RotateCw size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setZoom((current) => Math.min(3, current * 1.25))}
+                title="Zoom in"
+                aria-label="Zoom in"
+              >
+                <ZoomIn size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setZoom((current) => Math.max(0.25, current / 1.25))}
+                title="Zoom out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className="icon-button"
+                type="button"
+                disabled={zoom === 1}
+                onClick={() => setZoom(1)}
+                title="Reset zoom"
+                aria-label="Reset zoom"
+              >
+                <RotateCcw size={13} strokeWidth={2} aria-hidden="true" />
+              </button>
+              {zoom !== 1 ? <span className="tool-label">{Math.round(zoom * 100)}%</span> : null}
+            </div>
+            <span className="toolbar-divider" aria-hidden="true" />
+            <div className="toolbar-group" role="group" aria-label="Canvas appearance">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => setCanvasBg((current) => CANVAS_BG_ORDER[current])}
+                title={`Canvas background: ${CANVAS_BG_LABEL[canvasBg]} (click to switch)`}
+                aria-label={`Canvas background: ${CANVAS_BG_LABEL[canvasBg]}. Click to switch.`}
+              >
+                <Palette size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className={gridOn ? "icon-button on" : "icon-button"}
+                type="button"
+                aria-pressed={gridOn}
+                onClick={() => setGridOn((current) => !current)}
+                title="Toggle canvas grid"
+                aria-label="Toggle canvas grid"
+              >
+                <Grid3x3 size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className={viewportPreset.width > 0 ? "icon-button on" : "icon-button"}
+                type="button"
+                onClick={() => setViewportIndex((current) => (current + 1) % VIEWPORT_PRESETS.length)}
+                title={`Viewport: ${viewportPreset.label} (click to switch)`}
+                aria-label={`Viewport: ${viewportPreset.label}. Click to switch.`}
+              >
+                <Smartphone size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              {viewportPreset.width > 0 ? (
+                <span className="tool-label">{viewportPreset.label}</span>
+              ) : null}
+            </div>
+            <span className="toolbar-divider" aria-hidden="true" />
+            <div className="toolbar-group" role="group" aria-label="Inspection">
+              <button
+                className={measureOn ? "icon-button on" : "icon-button"}
+                type="button"
+                aria-pressed={measureOn}
+                onClick={() =>
+                  setMeasureOn((current) => {
+                    if (current) setMeasureBox(null);
+                    return !current;
+                  })
+                }
+                title="Measure elements on hover"
+                aria-label="Measure elements on hover"
+              >
+                <Ruler size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className={outlineOn ? "icon-button on" : "icon-button"}
+                type="button"
+                aria-pressed={outlineOn}
+                onClick={() => setOutlineOn((current) => !current)}
+                title="Outline all elements"
+                aria-label="Outline all elements"
+              >
+                <Scan size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              <button
+                className={vision !== "none" ? "icon-button on" : "icon-button"}
+                type="button"
+                onClick={() => setVision((current) => VISION_ORDER[current])}
+                title={`Vision simulator: ${VISION_LABEL[vision]} (click to switch)`}
+                aria-label={`Vision simulator: ${VISION_LABEL[vision]}. Click to switch.`}
+              >
+                <Eye size={14} strokeWidth={2} aria-hidden="true" />
+              </button>
+              {vision !== "none" ? <span className="tool-label">{VISION_LABEL[vision]}</span> : null}
+            </div>
           </div>
-          <div className={rendering ? "status-dot busy" : "status-dot"}>{rendering ? "Rendering" : "Ready"}</div>
+          <div className="topbar-actions">
+            {rendering ? (
+              <span className="status-chip" role="status">
+                <span className="status-led" aria-hidden="true" />
+                Rendering
+              </span>
+            ) : null}
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setTheme((current) => THEME_ORDER[current])}
+              title={`Theme: ${THEME_META[theme].label} (click to switch)`}
+              aria-label={`Theme: ${THEME_META[theme].label}. Click to switch.`}
+            >
+              <ThemeIcon size={15} strokeWidth={2} aria-hidden="true" />
+            </button>
+            <span className="toolbar-divider" aria-hidden="true" />
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setFullscreen((current) => !current)}
+              title={fullscreen ? "Exit fullscreen" : "Go fullscreen"}
+              aria-label={fullscreen ? "Exit fullscreen" : "Go fullscreen"}
+            >
+              {fullscreen ? (
+                <Minimize size={14} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <Maximize size={14} strokeWidth={2} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={handleOpenCanvasTab}
+              title="Open canvas in new tab"
+              aria-label="Open canvas in new tab"
+            >
+              <ExternalLink size={14} strokeWidth={2} aria-hidden="true" />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={handleCopyLink}
+              title={linkCopied ? "Link copied" : "Copy canvas link"}
+              aria-label={linkCopied ? "Link copied" : "Copy canvas link"}
+            >
+              {linkCopied ? (
+                <Check size={14} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <Link size={14} strokeWidth={2} aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </header>
 
-        <section className="preview-band">
-          <div className="preview-surface">
+        <section
+          className={bandClassName}
+          onPointerMove={
+            measureOn
+              ? (event) => {
+                  const target =
+                    event.target instanceof Element ? event.target.closest(".roblox-node") : null;
+                  if (!(target instanceof HTMLElement)) {
+                    setMeasureBox(null);
+                    return;
+                  }
+                  const rect = target.getBoundingClientRect();
+                  setMeasureBox({
+                    left: rect.left,
+                    top: rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                    label: `${Math.round(target.offsetWidth)} × ${Math.round(target.offsetHeight)}`,
+                  });
+                }
+              : undefined
+          }
+          onPointerLeave={measureOn ? () => setMeasureBox(null) : undefined}
+        >
+          <div className={stageClassName} style={stageStyle}>
             {rendered?.tree ? <RobloxRenderer node={rendered.tree} isRoot /> : null}
-            {rendered?.error ? (
-              <div className="preview-message error-message">{rendered.error.message}</div>
-            ) : null}
-            {!rendered && !rendering && !error ? (
-              <div className="preview-message">Select a story to render it.</div>
-            ) : null}
-            {error ? <div className="preview-message error-message">{error}</div> : null}
           </div>
+          {rendered?.error ? (
+            <div className="preview-message error-message">{rendered.error.message}</div>
+          ) : null}
+          {!rendered && !rendering && !error ? (
+            <div className="preview-message">Select a story to render it.</div>
+          ) : null}
+          {error ? <div className="preview-message error-message">{error}</div> : null}
         </section>
-      </main>
 
-      <aside className="inspector">
-        <section className="panel">
-          <h2>Controls</h2>
-          {selectedStory && Object.keys(selectedStory.controls).length > 0 ? (
-            <ControlPanel
-              controls={selectedStory.controls}
-              values={controls}
-              onChange={(key, value) => setControls((current) => ({ ...current, [key]: value }))}
+        {measureOn && measureBox ? (
+          <div
+            className="measure-box"
+            style={{
+              left: measureBox.left,
+              top: measureBox.top,
+              width: measureBox.width,
+              height: measureBox.height,
+            }}
+            aria-hidden="true"
+          >
+            <span className="measure-tag">{measureBox.label}</span>
+          </div>
+        ) : null}
+
+        <svg className="vision-defs" aria-hidden="true" focusable="false">
+          <filter id="vision-protanopia">
+            <feColorMatrix
+              type="matrix"
+              values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"
             />
+          </filter>
+          <filter id="vision-deuteranopia">
+            <feColorMatrix
+              type="matrix"
+              values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"
+            />
+          </filter>
+          <filter id="vision-tritanopia">
+            <feColorMatrix
+              type="matrix"
+              values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"
+            />
+          </filter>
+        </svg>
+
+        <section className="addon-panel" aria-label="Story addons">
+          <header className="addon-tabs" role="tablist" aria-label="Story addon panels">
+            {(["controls", "warnings"] as const).map((tab) => (
+              <button
+                aria-controls={`addon-${tab}`}
+                aria-selected={addonTab === tab}
+                className={addonTab === tab ? "addon-tab active" : "addon-tab"}
+                id={`addon-tab-${tab}`}
+                key={tab}
+                onClick={() => setAddonTab(tab)}
+                role="tab"
+                type="button"
+              >
+                {tab === "controls" ? "Controls" : "Warnings"}
+                <span className="controls-count">{addonCounts[tab]}</span>
+              </button>
+            ))}
+          </header>
+
+          {addonTab === "controls" ? (
+            <div
+              aria-labelledby="addon-tab-controls"
+              className="addon-body controls-body"
+              id="addon-controls"
+              role="tabpanel"
+            >
+              {controlEntries.length === 0 ? (
+                <div className="empty-state">This story has no controls.</div>
+              ) : (
+                <div className="controls-table">
+                  <div className="controls-table-head">
+                    <span>Name</span>
+                    <span>Control</span>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() =>
+                        selectedStory && setControls(defaultControlValues(selectedStory.controls))
+                      }
+                      title="Reset controls"
+                      aria-label="Reset controls"
+                    >
+                      <RotateCcw size={14} strokeWidth={2} aria-hidden="true" />
+                    </button>
+                  </div>
+                  {controlEntries.map(([key, control]) => (
+                    <div className="controls-table-row" key={key}>
+                      <div className="control-name">
+                        <span className="control-title">{control.label ?? key}</span>
+                        {control.description ? (
+                          <p className="control-description">{control.description}</p>
+                        ) : null}
+                      </div>
+                      <div className="control-cell">
+                        <ControlInput
+                          control={control}
+                          name={`control-${key}`}
+                          value={controls[key] ?? control.default}
+                          onChange={(value) =>
+                            setControls((current) => ({ ...current, [key]: value }))
+                          }
+                        />
+                      </div>
+                      <span aria-hidden="true" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
-            <p className="muted">This story has no controls.</p>
+            <div
+              aria-labelledby="addon-tab-warnings"
+              className="addon-body warnings-section"
+              id="addon-warnings"
+              role="tabpanel"
+            >
+              {combinedWarnings.length === 0 ? (
+                <div className="empty-state">No warnings for this story.</div>
+              ) : (
+                <>
+                  <h3>
+                    <TriangleAlert size={13} strokeWidth={2} aria-hidden="true" />
+                    Warnings
+                    <span className="controls-count">{combinedWarnings.length}</span>
+                  </h3>
+                  <ul className="warnings-list">
+                    {combinedWarnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           )}
         </section>
-
-        <section className="panel">
-          <h2>Warnings</h2>
-          <WarningList
-            warnings={[
-              ...(project?.warnings ?? []),
-              ...(rendered?.warnings ?? []),
-              ...rendererWarnings,
-            ]}
-          />
-        </section>
-      </aside>
+      </main>
     </div>
   );
 }
 
-function ControlPanel({
-  controls,
-  values,
-  onChange,
+function StoryTreeItem({
+  node,
+  depth,
+  expandedNodeIds,
+  forceExpanded,
+  selectedStoryId,
+  onToggle,
+  onSelect,
 }: {
-  controls: Record<string, ControlDefinition>;
-  values: ControlValues;
-  onChange: (key: string, value: JsonValue) => void;
+  node: StoryTreeNode;
+  depth: number;
+  expandedNodeIds: Set<string>;
+  forceExpanded: boolean;
+  selectedStoryId: string | null;
+  onToggle: (nodeId: string) => void;
+  onSelect: (storyId: string) => void;
 }): ReactElement {
+  const isBranch = node.type !== "story";
+  const isExpanded = forceExpanded || expandedNodeIds.has(node.id);
+  const isSelected = node.story?.id === selectedStoryId;
+  const iconMeta = getStoryTreeIcon(node);
+  const style = { "--tree-depth": depth } as CSSProperties;
+
   return (
-    <div className="controls-list">
-      {Object.entries(controls).map(([key, control]) => (
-        <label className="control-row" key={key}>
-          <span>{control.label ?? key}</span>
-          <ControlInput
-            control={control}
-            value={values[key] ?? control.default}
-            onChange={(value) => onChange(key, value)}
+    <div className="story-tree-node">
+      <button
+        aria-expanded={isBranch ? isExpanded : undefined}
+        className={[
+          "story-tree-row",
+          `story-tree-row-${node.type}`,
+          isSelected ? "active" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (isBranch) {
+            onToggle(node.id);
+          } else if (node.story) {
+            onSelect(node.story.id);
+          }
+        }}
+        style={style}
+        title={node.story?.relativePath ?? node.label}
+        type="button"
+      >
+        <span className="tree-expander" aria-hidden="true">
+          {isBranch ? (
+            isExpanded ? (
+              <ChevronDown size={13} strokeWidth={2} />
+            ) : (
+              <ChevronRight size={13} strokeWidth={2} />
+            )
+          ) : null}
+        </span>
+        {iconMeta ? (
+          <iconMeta.icon
+            className={`tree-node-icon ${iconMeta.tone}`}
+            size={12}
+            strokeWidth={2}
+            aria-hidden="true"
           />
-        </label>
-      ))}
+        ) : null}
+        <span className="tree-node-label">{node.label}</span>
+      </button>
+
+      {isBranch && isExpanded
+        ? node.children.map((child) => (
+            <StoryTreeItem
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              expandedNodeIds={expandedNodeIds}
+              forceExpanded={forceExpanded}
+              selectedStoryId={selectedStoryId}
+              onToggle={onToggle}
+              onSelect={onSelect}
+            />
+          ))
+        : null}
     </div>
   );
+}
+
+/* Storybook's node-type icon semantics: roots have no icon (they render as
+   uppercase section headings); folders are pink; a folder whose children are
+   all stories reads as a "component" and gets the blue grid; stories get the
+   teal bookmark; doc-flavored stories get the orange file. */
+function getStoryTreeIcon(node: StoryTreeNode): { icon: LucideIcon; tone: string } | null {
+  if (node.type === "root") return null;
+  if (node.type === "folder") {
+    const isComponent =
+      node.children.length > 0 && node.children.every((child) => child.type === "story");
+    return isComponent
+      ? { icon: LayoutGrid, tone: "icon-component" }
+      : { icon: Folder, tone: "icon-folder" };
+  }
+  if (/\bdocs?\b/i.test(node.label)) return { icon: FileText, tone: "icon-doc" };
+  return { icon: Bookmark, tone: "icon-story" };
+}
+
+function sameJsonValue(a: JsonValue | undefined, b: JsonValue | undefined): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 function ControlInput({
   control,
+  name,
   value,
   onChange,
 }: {
   control: ControlDefinition;
+  name?: string | undefined;
   value: JsonValue;
   onChange: (value: JsonValue) => void;
 }): ReactElement {
   if (control.type === "boolean") {
     return (
-      <input
-        checked={value === true}
-        type="checkbox"
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
+      <label className="toggle-control">
+        <input
+          checked={value === true}
+          type="checkbox"
+          onChange={(event) => onChange(event.currentTarget.checked)}
+        />
+        <span className="toggle-track" aria-hidden="true" />
+        <span>{value === true ? "On" : "Off"}</span>
+      </label>
     );
   }
 
   if (control.type === "number") {
+    const numericValue = typeof value === "number" ? value : Number(control.default) || 0;
     return (
-      <input
-        type="number"
-        value={typeof value === "number" ? value : Number(control.default) || 0}
+      <NumericTextBox
+        ariaLabel="Number value"
+        glyph="#"
+        value={numericValue}
         min={control.min}
         max={control.max}
         step={control.step}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        onChange={(nextValue) => onChange(nextValue)}
       />
     );
   }
@@ -232,6 +1005,7 @@ function ControlInput({
     return (
       <div className="slider-control">
         <input
+          aria-label="Slider value"
           type="range"
           value={numericValue}
           min={control.min ?? 0}
@@ -240,24 +1014,66 @@ function ControlInput({
           onInput={(event) => onChange(Number(event.currentTarget.value))}
           onChange={(event) => onChange(Number(event.currentTarget.value))}
         />
-        <input
-          type="number"
+        <NumericTextBox
+          ariaLabel="Exact value"
+          glyph="="
           value={numericValue}
           min={control.min}
           max={control.max}
           step={control.step}
-          onChange={(event) => onChange(Number(event.currentTarget.value))}
+          onChange={(nextValue) => onChange(nextValue)}
         />
       </div>
     );
   }
 
   if (control.type === "color") {
+    const hex = color3ToHex(value);
     return (
-      <input
-        type="color"
-        value={color3ToHex(value)}
-        onChange={(event) => onChange(hexToColor3(event.currentTarget.value) as unknown as JsonValue)}
+      <div className="color-control">
+        <label className="color-chip" title={`Pick color ${hex}`}>
+          <span className="color-chip-swatch" style={{ backgroundColor: hex }} aria-hidden="true" />
+          <input
+            aria-label="Color swatch"
+            type="color"
+            value={hex}
+            onChange={(event) =>
+              onChange(hexToColor3(event.currentTarget.value) as unknown as JsonValue)
+            }
+          />
+        </label>
+        <input
+          className="color-hex-input"
+          aria-label="Hex color"
+          type="text"
+          value={hex}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            if (/^#[0-9a-fA-F]{6}$/.test(next)) {
+              onChange(hexToColor3(next) as unknown as JsonValue);
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (control.type === "udim") {
+    return (
+      <UDimControl
+        control={control}
+        value={value}
+        onChange={onChange}
+      />
+    );
+  }
+
+  if (control.type === "udim2") {
+    return (
+      <UDim2Control
+        control={control}
+        value={value}
+        onChange={onChange}
       />
     );
   }
@@ -277,6 +1093,84 @@ function ControlInput({
     );
   }
 
+  if (control.type === "radio") {
+    return (
+      <div className={control.inline ? "option-group inline" : "option-group"} role="radiogroup">
+        {(control.options ?? []).map((option) => (
+          <label className="option-item" key={JSON.stringify(option.value)}>
+            <input
+              type="radio"
+              name={name ?? "ui-claps-radio"}
+              checked={sameJsonValue(value, option.value)}
+              onChange={() => onChange(option.value)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    );
+  }
+
+  if (control.type === "check" || control.type === "multiselect") {
+    const selected = Array.isArray(value)
+      ? value
+      : Array.isArray(control.default)
+        ? control.default
+        : [];
+
+    if (control.type === "check") {
+      return (
+        <div className={control.inline ? "option-group inline" : "option-group"}>
+          {(control.options ?? []).map((option) => {
+            const isChecked = selected.some((entry) => sameJsonValue(entry, option.value));
+            return (
+              <label className="option-item" key={JSON.stringify(option.value)}>
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() =>
+                    onChange(
+                      isChecked
+                        ? selected.filter((entry) => !sameJsonValue(entry, option.value))
+                        : [...selected, option.value],
+                    )
+                  }
+                />
+                <span>{option.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <select
+        multiple
+        size={Math.min(Math.max(control.options?.length ?? 3, 2), 4)}
+        value={selected.map((entry) => JSON.stringify(entry))}
+        onChange={(event) =>
+          onChange(
+            Array.from(
+              event.currentTarget.selectedOptions,
+              (option) => JSON.parse(option.value) as JsonValue,
+            ),
+          )
+        }
+      >
+        {(control.options ?? []).map((option) => (
+          <option key={JSON.stringify(option.value)} value={JSON.stringify(option.value)}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  if (control.type === "object") {
+    return <ObjectControl value={value ?? control.default} onChange={onChange} />;
+  }
+
   return (
     <input
       type="text"
@@ -286,18 +1180,340 @@ function ControlInput({
   );
 }
 
-function WarningList({ warnings }: { warnings: string[] }): ReactElement {
-  if (warnings.length === 0) {
-    return <p className="muted">No warnings.</p>;
+function ObjectControl({
+  value,
+  onChange,
+}: {
+  value: JsonValue;
+  onChange: (value: JsonValue) => void;
+}): ReactElement {
+  const [draft, setDraft] = useState(() => JSON.stringify(value ?? null, null, 2));
+  const [focused, setFocused] = useState(false);
+  const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(JSON.stringify(value ?? null, null, 2));
+      setInvalid(false);
+    }
+  }, [focused, value]);
+
+  return (
+    <textarea
+      className={invalid ? "object-control invalid" : "object-control"}
+      aria-label="Object value (JSON)"
+      aria-invalid={invalid}
+      spellCheck={false}
+      rows={Math.min(Math.max(draft.split("\n").length, 3), 10)}
+      value={draft}
+      onFocus={() => setFocused(true)}
+      onChange={(event) => {
+        const next = event.currentTarget.value;
+        setDraft(next);
+        try {
+          onChange(JSON.parse(next) as JsonValue);
+          setInvalid(false);
+        } catch {
+          setInvalid(true);
+        }
+      }}
+      onBlur={() => setFocused(false)}
+    />
+  );
+}
+
+function UDimControl({
+  control,
+  value,
+  onChange,
+}: {
+  control: ControlDefinition;
+  value: JsonValue;
+  onChange: (value: JsonValue) => void;
+}): ReactElement {
+  const udim = toUDimControlValue(value, control.default);
+
+  return (
+    <div className="dimension-grid udim-grid">
+      <NumericTextBox
+        ariaLabel="Scale"
+        glyph="S"
+        value={udim.scale}
+        min={control.scaleMin}
+        max={control.scaleMax}
+        step={control.scaleStep ?? 0.01}
+        precision={2}
+        onChange={(scale) => onChange(makeUDim(scale, udim.offset))}
+      />
+      <NumericTextBox
+        ariaLabel="Offset"
+        glyph="px"
+        value={udim.offset}
+        min={control.offsetMin}
+        max={control.offsetMax}
+        step={control.offsetStep ?? 1}
+        onChange={(offset) => onChange(makeUDim(udim.scale, offset))}
+      />
+    </div>
+  );
+}
+
+function UDim2Control({
+  control,
+  value,
+  onChange,
+}: {
+  control: ControlDefinition;
+  value: JsonValue;
+  onChange: (value: JsonValue) => void;
+}): ReactElement {
+  const udim2 = toUDim2ControlValue(value, control.default);
+
+  return (
+    <div className="dimension-grid udim2-grid">
+      <NumericTextBox
+        ariaLabel="X scale"
+        glyph="XS"
+        value={udim2.x.scale}
+        min={control.scaleMin}
+        max={control.scaleMax}
+        step={control.scaleStep ?? 0.01}
+        precision={2}
+        onChange={(scale) => onChange(makeUDim2(makeUDimRaw(scale, udim2.x.offset), udim2.y))}
+      />
+      <NumericTextBox
+        ariaLabel="Y scale"
+        glyph="YS"
+        value={udim2.y.scale}
+        min={control.scaleMin}
+        max={control.scaleMax}
+        step={control.scaleStep ?? 0.01}
+        precision={2}
+        onChange={(scale) => onChange(makeUDim2(udim2.x, makeUDimRaw(scale, udim2.y.offset)))}
+      />
+      <NumericTextBox
+        ariaLabel="X offset"
+        glyph="X"
+        value={udim2.x.offset}
+        min={control.offsetMin}
+        max={control.offsetMax}
+        step={control.offsetStep ?? 1}
+        onChange={(offset) => onChange(makeUDim2(makeUDimRaw(udim2.x.scale, offset), udim2.y))}
+      />
+      <NumericTextBox
+        ariaLabel="Y offset"
+        glyph="Y"
+        value={udim2.y.offset}
+        min={control.offsetMin}
+        max={control.offsetMax}
+        step={control.offsetStep ?? 1}
+        onChange={(offset) => onChange(makeUDim2(udim2.x, makeUDimRaw(udim2.y.scale, offset)))}
+      />
+    </div>
+  );
+}
+
+function NumericTextBox({
+  ariaLabel,
+  glyph,
+  value,
+  min,
+  max,
+  step = 1,
+  precision,
+  onChange,
+}: {
+  ariaLabel: string;
+  glyph: string;
+  value: number;
+  min?: number | undefined;
+  max?: number | undefined;
+  step?: number | undefined;
+  precision?: number | undefined;
+  onChange: (value: number) => void;
+}): ReactElement {
+  const resolvedPrecision = precision ?? precisionFromStep(step);
+  const [draft, setDraft] = useState(formatNumericText(value, resolvedPrecision));
+  const [focused, setFocused] = useState(false);
+  const [scrubbing, setScrubbing] = useState(false);
+  const drag = useRef<{ startX: number; startValue: number } | null>(null);
+
+  useEffect(() => {
+    if (!focused) {
+      setDraft(formatNumericText(value, resolvedPrecision));
+    }
+  }, [focused, resolvedPrecision, value]);
+
+  function commit(nextValue: number): void {
+    const next = clampNumber(roundNumeric(nextValue, resolvedPrecision), min, max);
+    setDraft(formatNumericText(next, resolvedPrecision));
+    onChange(next);
+  }
+
+  function onPointerDown(event: ReactPointerEvent<HTMLSpanElement>): void {
+    event.preventDefault();
+    const start = { startX: event.clientX, startValue: value };
+    drag.current = start;
+    setScrubbing(true);
+    const target = event.currentTarget;
+    const pointerId = event.pointerId;
+    const ownerDocument = target.ownerDocument;
+
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      /* pointer capture is best-effort */
+    }
+
+    const move = (nativeEvent: globalThis.PointerEvent): void => {
+      if (nativeEvent.pointerId !== pointerId) return;
+      commit(start.startValue + (nativeEvent.clientX - start.startX) * step);
+    };
+    const end = (nativeEvent: globalThis.PointerEvent): void => {
+      if (nativeEvent.pointerId !== pointerId) return;
+      drag.current = null;
+      setScrubbing(false);
+      ownerDocument.removeEventListener("pointermove", move);
+      ownerDocument.removeEventListener("pointerup", end);
+      ownerDocument.removeEventListener("pointercancel", end);
+      try {
+        target.releasePointerCapture(pointerId);
+      } catch {
+        /* pointer already released */
+      }
+    };
+
+    ownerDocument.addEventListener("pointermove", move);
+    ownerDocument.addEventListener("pointerup", end);
+    ownerDocument.addEventListener("pointercancel", end);
   }
 
   return (
-    <ul className="warnings-list">
-      {Array.from(new Set(warnings)).map((warning) => (
-        <li key={warning}>{warning}</li>
-      ))}
-    </ul>
+    <div className={scrubbing ? "cell scrub is-scrubbing" : "cell scrub"}>
+      <span
+        className="cell-glyph"
+        onPointerDown={onPointerDown}
+      >
+        {glyph}
+      </span>
+      <input
+        aria-label={ariaLabel}
+        className="numeric-textbox"
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        data-min={min}
+        data-max={max}
+        onFocus={() => setFocused(true)}
+        onChange={(event) => {
+          const nextDraft = event.currentTarget.value;
+          setDraft(nextDraft);
+          const parsed = parseNumericText(nextDraft);
+          if (parsed !== null) {
+            onChange(clampNumber(parsed, min, max));
+          }
+        }}
+        onBlur={() => {
+          setFocused(false);
+          const parsed = parseNumericText(draft);
+          commit(parsed ?? value);
+        }}
+      />
+    </div>
   );
+}
+
+function parseNumericText(value: string): number | null {
+  if (value.trim() === "" || value === "-" || value === "." || value === "-.") {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatNumericText(value: number, precision = 4): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(precision)));
+}
+
+function precisionFromStep(step: number): number {
+  if (!Number.isFinite(step) || Number.isInteger(step)) return 0;
+  const decimal = String(step).split(".")[1];
+  return Math.min(decimal?.length ?? 4, 4);
+}
+
+function roundNumeric(value: number, precision: number): number {
+  const factor = 10 ** precision;
+  return Math.round(value * factor) / factor;
+}
+
+function clampNumber(value: number, min?: number, max?: number): number {
+  const minClamped = min == null ? value : Math.max(min, value);
+  return max == null ? minClamped : Math.min(max, minClamped);
+}
+
+function makeUDimRaw(scale: number, offset: number): RobloxUDim {
+  return {
+    $type: "UDim",
+    scale,
+    offset,
+  };
+}
+
+function makeUDim(scale: number, offset: number): JsonValue {
+  return makeUDimRaw(scale, offset) as unknown as JsonValue;
+}
+
+function makeUDim2(x: RobloxUDim, y: RobloxUDim): JsonValue {
+  return {
+    $type: "UDim2",
+    x,
+    y,
+  } as unknown as JsonValue;
+}
+
+function toUDimControlValue(value: JsonValue | undefined, fallback: JsonValue): RobloxUDim {
+  if (isRecord(value) && value.$type === "UDim") {
+    return makeUDimRaw(numberValue(value.scale, 0), numberValue(value.offset, 0));
+  }
+
+  if (isRecord(fallback) && fallback.$type === "UDim") {
+    return makeUDimRaw(numberValue(fallback.scale, 0), numberValue(fallback.offset, 0));
+  }
+
+  return makeUDimRaw(0, 0);
+}
+
+function toUDim2ControlValue(
+  value: JsonValue | undefined,
+  fallback: JsonValue,
+): { x: RobloxUDim; y: RobloxUDim } {
+  if (isRecord(value) && value.$type === "UDim2") {
+    return {
+      x: toUDimControlValue(value.x as JsonValue | undefined, makeUDim(0, 0)),
+      y: toUDimControlValue(value.y as JsonValue | undefined, makeUDim(0, 0)),
+    };
+  }
+
+  if (isRecord(fallback) && fallback.$type === "UDim2") {
+    return {
+      x: toUDimControlValue(fallback.x as JsonValue | undefined, makeUDim(0, 0)),
+      y: toUDimControlValue(fallback.y as JsonValue | undefined, makeUDim(0, 0)),
+    };
+  }
+
+  return {
+    x: makeUDimRaw(0, 0),
+    y: makeUDimRaw(0, 0),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
 function defaultControlValues(controls: Record<string, ControlDefinition>): ControlValues {
