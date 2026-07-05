@@ -29,6 +29,7 @@
   "scripts": {
     "dev": "tsx src/node/cli.ts dev --config ui-claps.config.ts",
     "build": "node scripts/clean.mjs && tsc -p tsconfig.node.json && vite build && node scripts/copy-runtime.mjs",
+    "package:release": "node scripts/package-release.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.app.json"
   },
