@@ -185,7 +185,21 @@ function NumberSequence.new(first, second)
   })
 end
 
-function UI.create(className, props, children)
+local Font = {}
+function Font.fromEnum(font)
+  return makeSerialized({
+    ["$type"] = "Font",
+    family = clone(font),
+  })
+end
+
+function UI.create(className, props, children, shiftedChildren)
+  if className == UI then
+    className = props
+    props = children
+    children = shiftedChildren
+  end
+
   local normalizedChildren = {}
 
   if type(children) == "table" then
@@ -214,8 +228,41 @@ function UI.create(className, props, children)
 end
 
 UI.control = {}
+UI.rovy = {}
+UI.rovyVide = {}
 
-function UI.control.string(default, options)
+function UI.rovy.story(config, shiftedConfig)
+  if config == UI.rovy then
+    config = shiftedConfig
+  end
+
+  if type(config) ~= "table" then
+    error("UIClaps.rovy.story expects a story config table.", 2)
+  end
+
+  config.kind = "rovy"
+  return config
+end
+
+function UI.rovyVide.story(config, shiftedConfig)
+  if config == UI.rovyVide then
+    config = shiftedConfig
+  end
+
+  if type(config) ~= "table" then
+    error("UIClaps.rovyVide.story expects a story config table.", 2)
+  end
+
+  config.kind = "rovy-vide"
+  return config
+end
+
+function UI.control.string(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
   options = options or {}
   return {
     type = "string",
@@ -225,7 +272,12 @@ function UI.control.string(default, options)
   }
 end
 
-function UI.control.boolean(default, options)
+function UI.control.boolean(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
   options = options or {}
   return {
     type = "boolean",
@@ -235,7 +287,12 @@ function UI.control.boolean(default, options)
   }
 end
 
-function UI.control.number(default, options)
+function UI.control.number(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
   options = options or {}
   return {
     type = "number",
@@ -248,7 +305,15 @@ function UI.control.number(default, options)
   }
 end
 
-function UI.control.slider(default, min, max, step, options)
+function UI.control.slider(default, min, max, step, options, shiftedOptions)
+  if default == UI.control then
+    default = min
+    min = max
+    max = step
+    step = options
+    options = shiftedOptions
+  end
+
   options = options or {}
   return {
     type = "slider",
@@ -261,7 +326,12 @@ function UI.control.slider(default, min, max, step, options)
   }
 end
 
-function UI.control.color(default, options)
+function UI.control.color(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
   options = options or {}
   return {
     type = "color",
@@ -271,7 +341,12 @@ function UI.control.color(default, options)
   }
 end
 
-function UI.control.select(default, options)
+function UI.control.select(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
   options = options or {}
   return {
     type = "select",
@@ -282,7 +357,118 @@ function UI.control.select(default, options)
   }
 end
 
-function UI.serialize(value)
+function UI.control.radio(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
+  options = options or {}
+  return {
+    type = "radio",
+    default = clone(default),
+    options = clone(options.options or {}),
+    inline = options.inline == true,
+    label = options.label,
+    description = options.description,
+  }
+end
+
+function UI.control.check(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
+  options = options or {}
+  return {
+    type = "check",
+    default = clone(default or {}),
+    options = clone(options.options or {}),
+    inline = options.inline == true,
+    label = options.label,
+    description = options.description,
+  }
+end
+
+function UI.control.multiselect(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
+  options = options or {}
+  return {
+    type = "multiselect",
+    default = clone(default or {}),
+    options = clone(options.options or {}),
+    label = options.label,
+    description = options.description,
+  }
+end
+
+function UI.control.object(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
+  options = options or {}
+  return {
+    type = "object",
+    default = clone(default or {}),
+    label = options.label,
+    description = options.description,
+  }
+end
+
+function UI.control.udim(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
+  options = options or {}
+  return {
+    type = "udim",
+    default = clone(default or UDim.new(0, 0)),
+    scaleMin = options.scaleMin,
+    scaleMax = options.scaleMax,
+    scaleStep = options.scaleStep,
+    offsetMin = options.offsetMin,
+    offsetMax = options.offsetMax,
+    offsetStep = options.offsetStep,
+    label = options.label,
+    description = options.description,
+  }
+end
+
+function UI.control.udim2(default, options, shiftedOptions)
+  if default == UI.control then
+    default = options
+    options = shiftedOptions
+  end
+
+  options = options or {}
+  return {
+    type = "udim2",
+    default = clone(default or UDim2.fromOffset(0, 0)),
+    scaleMin = options.scaleMin,
+    scaleMax = options.scaleMax,
+    scaleStep = options.scaleStep,
+    offsetMin = options.offsetMin,
+    offsetMax = options.offsetMax,
+    offsetStep = options.offsetStep,
+    label = options.label,
+    description = options.description,
+  }
+end
+
+function UI.serialize(value, shiftedValue)
+  if value == UI then
+    value = shiftedValue
+  end
+
   return clone(value)
 end
 
@@ -294,6 +480,7 @@ function UI.globals()
     ColorSequence = ColorSequence,
     NumberSequence = NumberSequence,
     Vector2 = Vector2,
+    Font = Font,
     Enum = makeEnum(),
   }
 end
@@ -302,6 +489,7 @@ function UI.installGlobals(target)
   for key, value in pairs(UI.globals()) do
     target[key] = value
   end
+  target.UIClaps = UI
 end
 
 UI.UDim = UDim
@@ -310,6 +498,7 @@ UI.Color3 = Color3
 UI.ColorSequence = ColorSequence
 UI.NumberSequence = NumberSequence
 UI.Vector2 = Vector2
+UI.Font = Font
 UI.Enum = makeEnum()
 
 return UI

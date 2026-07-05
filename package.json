@@ -4,12 +4,28 @@
   "private": true,
   "type": "module",
   "description": "A web story renderer for Roblox UI powered by Zune and DOM/CSS.",
+  "packageManager": "pnpm@11.8.0",
   "bin": {
     "ui-claps": "./dist/node/cli.js"
   },
   "exports": {
-    ".": "./dist/node/index.js"
+    ".": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
+    },
+    "./roblox-ts": {
+      "types": "./roblox-ts.d.ts"
+    },
+    "./rovy-vide": {
+      "types": "./rovy-vide.d.ts",
+      "default": "./rovy-vide.luau"
+    },
+    "./rovy": {
+      "types": "./rovy.d.ts",
+      "default": "./rovy.luau"
+    }
   },
+  "types": "./dist/node/index.d.ts",
   "scripts": {
     "dev": "tsx src/node/cli.ts dev --config ui-claps.config.ts",
     "build": "node scripts/clean.mjs && tsc -p tsconfig.node.json && vite build && node scripts/copy-runtime.mjs",
@@ -17,17 +33,19 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@fontsource/nunito-sans": "^5.2.7",
     "express": "^5.1.0",
     "fast-glob": "^3.3.3",
+    "lucide-react": "^1.23.0",
     "open": "^10.2.0",
     "vite": "^8.0.16"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.0.2",
     "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsx": "^4.20.0",
