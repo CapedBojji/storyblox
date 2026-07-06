@@ -5,6 +5,40 @@
   "type": "module",
   "description": "A web story renderer for Roblox UI powered by Zune and DOM/CSS.",
   "packageManager": "pnpm@11.8.0",
+  "main": "./dist/vscode/extension.js",
+  "engines": {
+    "vscode": "^1.92.0"
+  },
+  "activationEvents": [
+    "onCommand:uiClaps.openPreview"
+  ],
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "uiClaps.openPreview",
+        "title": "UI Claps: Open Preview"
+      }
+    ],
+    "configuration": {
+      "title": "UI Claps",
+      "properties": {
+        "uiClaps.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Default project folder to use when opening a UI Claps preview."
+        },
+        "uiClaps.configPath": {
+          "type": "string",
+          "default": "",
+          "description": "Default ui-claps config file to use when opening a UI Claps preview."
+        }
+      }
+    }
+  },
   "bin": {
     "storyblox": "./dist/node/cli.js"
   },
@@ -49,6 +83,7 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/vscode": "1.92.0",
     "@vitejs/plugin-react": "^6.0.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

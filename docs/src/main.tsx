@@ -6,21 +6,44 @@ import "@fontsource/nunito-sans/700.css";
 import "@fontsource/nunito-sans/800.css";
 import "./styles.css";
 
-const defaultStoryCode = `return {
+const defaultStoryCode = `local UI = require("@ui-claps/adapter")
+
+return {
   name = "Primary Button",
-  render = function()
-    local button = Instance.new("TextButton")
-    button.Name = "PrimaryButton"
-    button.Size = UDim2.fromOffset(220, 56)
-    button.Text = "Play"
-    button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 10)
-    corner.Parent = button
-
-    return button
+  controls = {
+    text = UI.control.string("Play", {
+      label = "Text",
+      description = "Button label shown in the preview.",
+    }),
+    accent = UI.control.color(Color3.fromRGB(0, 170, 255), {
+      label = "Color",
+      description = "Button BackgroundColor3.",
+    }),
+    size = UI.control.udim2(UDim2.fromOffset(220, 56), {
+      label = "Size",
+      offsetMin = 36,
+      offsetMax = 360,
+      offsetStep = 4,
+    }),
+    cornerRadius = UI.control.udim(UDim.new(0, 10), {
+      label = "Radius",
+      offsetMin = 0,
+      offsetMax = 28,
+      offsetStep = 1,
+    }),
+  },
+  render = function(props)
+    return UI.create("TextButton", {
+      Name = "PrimaryButton",
+      Size = props.size,
+      Text = props.text,
+      BackgroundColor3 = props.accent,
+      TextColor3 = Color3.fromRGB(255, 255, 255),
+    }, {
+      UI.create("UICorner", {
+        CornerRadius = props.cornerRadius,
+      }),
+    })
   end,
 }`;
 
@@ -301,30 +324,30 @@ function StoryEditorDemo() {
 
   function setText(value: string) {
     patchCode(
-      /button\.Text\s*=\s*"[^"]*"/,
-      `button.Text = "${value.replace(/[\\"]/g, "")}"`,
+      /text\s*=\s*UI\.control\.string\("[^"]*"/,
+      `text = UI.control.string("${value.replace(/[\\"]/g, "")}"`,
     );
   }
 
   function setBackground(hex: string) {
     const [r, g, b] = hexToRgbChannels(hex);
     patchCode(
-      /button\.BackgroundColor3\s*=\s*Color3\.fromRGB\([^)]*\)/,
-      `button.BackgroundColor3 = Color3.fromRGB(${r}, ${g}, ${b})`,
+      /accent\s*=\s*UI\.control\.color\(Color3\.fromRGB\([^)]*\)/,
+      `accent = UI.control.color(Color3.fromRGB(${r}, ${g}, ${b})`,
     );
   }
 
   function setSize(width: number, height: number) {
     patchCode(
-      /button\.Size\s*=\s*UDim2\.fromOffset\([^)]*\)/,
-      `button.Size = UDim2.fromOffset(${width}, ${height})`,
+      /size\s*=\s*UI\.control\.udim2\(UDim2\.fromOffset\([^)]*\)/,
+      `size = UI.control.udim2(UDim2.fromOffset(${width}, ${height})`,
     );
   }
 
   function setRadius(value: number) {
     patchCode(
-      /corner\.CornerRadius\s*=\s*UDim\.new\(0\s*,\s*[-\d.]+\)/,
-      `corner.CornerRadius = UDim.new(0, ${value})`,
+      /cornerRadius\s*=\s*UI\.control\.udim\(UDim\.new\(0\s*,\s*[-\d.]+\)/,
+      `cornerRadius = UI.control.udim(UDim.new(0, ${value})`,
     );
   }
 
@@ -449,28 +472,28 @@ function hexToRgbChannels(hex: string): [number, number, number] {
 }
 
 function parseStory(source: string): DemoStory {
-  if (!/render\s*=\s*function\s*\(\)/.test(source)) {
-    throw new Error("Expected render = function() in the story.");
+  if (!/controls\s*=\s*{/.test(source)) {
+    throw new Error("Expected a controls table in the story.");
   }
-  if (!/Instance\.new\("TextButton"\)/.test(source)) {
-    throw new Error("This demo expects Instance.new(\"TextButton\").");
+  if (!/render\s*=\s*function\s*\(\s*props\s*\)/.test(source)) {
+    throw new Error("Expected render = function(props) in the story.");
   }
-  if (!/return\s+button/.test(source)) {
-    throw new Error("Expected the story to return button.");
+  if (!/UI\.create\("TextButton"/.test(source)) {
+    throw new Error("This demo expects UI.create(\"TextButton\").");
   }
 
-  const width = readPair(source, "Size", /button\.Size\s*=\s*UDim2\.fromOffset\(([-\d.]+)\s*,\s*([-\d.]+)\)/);
-  const background = readColor(source, "BackgroundColor3", /button\.BackgroundColor3\s*=\s*Color3\.fromRGB\(([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\)/);
-  const textColor = readColor(source, "TextColor3", /button\.TextColor3\s*=\s*Color3\.fromRGB\(([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\)/);
+  const size = readPair(source, "size control", /size\s*=\s*UI\.control\.udim2\(UDim2\.fromOffset\(([-\d.]+)\s*,\s*([-\d.]+)\)/);
+  const background = readColor(source, "accent control", /accent\s*=\s*UI\.control\.color\(Color3\.fromRGB\(([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\)/);
+  const textColor = readColor(source, "TextColor3", /TextColor3\s*=\s*Color3\.fromRGB\(([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\)/);
 
   return {
     name: readString(source, "name", /name\s*=\s*"([^"]*)"/),
-    text: readString(source, "Text", /button\.Text\s*=\s*"([^"]*)"/),
-    width: clamp(width[0], 96, 360),
-    height: clamp(width[1], 36, 120),
+    text: readString(source, "text control", /text\s*=\s*UI\.control\.string\("([^"]*)"/),
+    width: clamp(size[0], 96, 360),
+    height: clamp(size[1], 36, 120),
     background,
     textColor,
-    radius: clamp(readNumber(source, "CornerRadius", /corner\.CornerRadius\s*=\s*UDim\.new\(0\s*,\s*([-\d.]+)\)/), 0, 28),
+    radius: clamp(readNumber(source, "cornerRadius control", /cornerRadius\s*=\s*UI\.control\.udim\(UDim\.new\(0\s*,\s*([-\d.]+)\)/), 0, 28),
   };
 }
 

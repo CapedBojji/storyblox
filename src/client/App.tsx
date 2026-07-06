@@ -38,6 +38,7 @@ import type {
   StoryManifest,
 } from "../shared/types";
 import { fetchProject, renderStory } from "./api";
+import { getApiUrl, isEmbeddedPreview } from "./environment";
 import { RobloxRenderer } from "./renderer/RobloxRenderer";
 import { collectRendererWarnings } from "./renderer/warnings";
 import { color3ToHex, hexToColor3 } from "./renderer/style";
@@ -50,6 +51,7 @@ type AddonTab = "controls" | "warnings" | "output";
 
 function initialUrlParams(): URLSearchParams {
   try {
+    if (isEmbeddedPreview()) return new URLSearchParams();
     return new URLSearchParams(window.location.search);
   } catch {
     return new URLSearchParams();
@@ -125,6 +127,7 @@ function readStoredAddonCollapsed(): boolean {
 }
 
 export function App(): ReactElement {
+  const embedded = isEmbeddedPreview();
   const [project, setProject] = useState<ProjectManifest | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
     () => initialUrlParams().get("story"),
@@ -176,7 +179,7 @@ export function App(): ReactElement {
   }, []);
 
   useEffect(() => {
-    const events = new EventSource("/api/events");
+    const events = new EventSource(getApiUrl("/api/events"));
     events.addEventListener("project-update", (event) => {
       try {
         const update = JSON.parse((event as MessageEvent<string>).data) as ProjectUpdateEvent;
@@ -238,20 +241,23 @@ export function App(): ReactElement {
     [project, selectedId],
   );
 
-  // Keep the story id in the URL so links can be copied/shared, and mirror
-  // the story name into the tab title.
+  // In browser mode, keep the story id in the URL for shareable links. The
+  // VS Code webview does not expose browser navigation, so embedded previews
+  // keep story selection in React state only.
   useEffect(() => {
     if (!selectedStory) return;
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set("story", selectedStory.id);
-      window.history.replaceState(null, "", url);
-    } catch {
-      /* ignore */
+    if (!embedded) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set("story", selectedStory.id);
+        window.history.replaceState(null, "", url);
+      } catch {
+        /* ignore */
+      }
     }
     document.title = `${selectedStory.name} ⋅ UI Claps`;
     setLinkCopied(false);
-  }, [selectedStory?.id, selectedStory?.name]);
+  }, [embedded, selectedStory?.id, selectedStory?.name]);
 
   useEffect(() => {
     if (!selectedStory) return;
@@ -595,20 +601,24 @@ export function App(): ReactElement {
                 <Maximize size={14} strokeWidth={2} aria-hidden="true" />
               )}
             </button>
-            <button
-              className={linkCopied ? "icon-button text-button copied" : "icon-button text-button"}
-              type="button"
-              onClick={handleCopyLink}
-              title={linkCopied ? "Story link copied" : "Copy story link"}
-              aria-label={linkCopied ? "Story link copied" : "Copy story link"}
-            >
-              {linkCopied ? (
-                <Check size={14} strokeWidth={2} aria-hidden="true" />
-              ) : (
-                <Link size={14} strokeWidth={2} aria-hidden="true" />
-              )}
-              <span>{linkCopied ? "Copied" : "Share"}</span>
-            </button>
+            {!embedded ? (
+              <button
+                className={
+                  linkCopied ? "icon-button text-button copied" : "icon-button text-button"
+                }
+                type="button"
+                onClick={handleCopyLink}
+                title={linkCopied ? "Story link copied" : "Copy story link"}
+                aria-label={linkCopied ? "Story link copied" : "Copy story link"}
+              >
+                {linkCopied ? (
+                  <Check size={14} strokeWidth={2} aria-hidden="true" />
+                ) : (
+                  <Link size={14} strokeWidth={2} aria-hidden="true" />
+                )}
+                <span>{linkCopied ? "Copied" : "Share"}</span>
+              </button>
+            ) : null}
           </div>
         </header>
 

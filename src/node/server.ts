@@ -1,6 +1,7 @@
 import express from "express";
 import open from "open";
 import { readdir, readFile, stat } from "node:fs/promises";
+import type { Server } from "node:http";
 import { createServer as createViteServer } from "vite";
 import { loadUiClapsConfig } from "./config.js";
 import { discoverProject } from "./discovery.js";
@@ -12,9 +13,16 @@ import type { AppState, ResolvedUiClapsConfig } from "./types.js";
 
 interface StartOptions {
   configPath: string;
+  handleSignals?: boolean;
+  open?: boolean;
 }
 
-export async function startDevServer(options: StartOptions): Promise<void> {
+export interface DevServerHandle {
+  url: string;
+  close(): Promise<void>;
+}
+
+export async function startDevServer(options: StartOptions): Promise<DevServerHandle> {
   const config = await loadUiClapsConfig(options.configPath);
   const zune = await checkZune(config.zuneCommand);
 
@@ -23,6 +31,16 @@ export async function startDevServer(options: StartOptions): Promise<void> {
   }
 
   const app = express();
+  app.use((request, response, next) => {
+    response.setHeader("Access-Control-Allow-Origin", "*");
+    response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    response.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    if (request.method === "OPTIONS") {
+      response.sendStatus(204);
+      return;
+    }
+    next();
+  });
   app.use(express.json({ limit: "2mb" }));
 
   let appState = await loadAppState(config);
@@ -106,13 +124,19 @@ export async function startDevServer(options: StartOptions): Promise<void> {
     });
   }
 
-  const server = app.listen(config.port, () => {
-    const url = `http://localhost:${config.port}`;
-    console.log(`UI Claps is running at ${url}`);
-    if (config.open) {
-      void open(url).catch(() => undefined);
-    }
-  });
+  let server: Server;
+  try {
+    server = await listen(app, config.port);
+  } catch (error) {
+    watcher.close();
+    await vite?.close();
+    throw error;
+  }
+  const url = `http://localhost:${config.port}`;
+  console.log(`UI Claps is running at ${url}`);
+  if (options.open ?? config.open) {
+    void open(url).catch(() => undefined);
+  }
 
   const shutdown = async (): Promise<void> => {
     watcher.close();
@@ -121,11 +145,39 @@ export async function startDevServer(options: StartOptions): Promise<void> {
     }
     eventClients.clear();
     await vite?.close();
-    server.close();
+    await closeServer(server);
   };
 
-  process.once("SIGINT", () => {
-    void shutdown().then(() => process.exit(0));
+  if (options.handleSignals ?? true) {
+    process.once("SIGINT", () => {
+      void shutdown().then(() => process.exit(0));
+    });
+  }
+
+  return {
+    url,
+    close: shutdown,
+  };
+}
+
+function listen(app: express.Express, port: number): Promise<Server> {
+  return new Promise((resolveListen, rejectListen) => {
+    const server = app.listen(port, () => {
+      resolveListen(server);
+    });
+    server.once("error", rejectListen);
+  });
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error) {
+        rejectClose(error);
+        return;
+      }
+      resolveClose();
+    });
   });
 }
 

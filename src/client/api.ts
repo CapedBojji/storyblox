@@ -1,4 +1,5 @@
 import type { ProjectManifest, RenderRequest, RenderResponse } from "../shared/types";
+import { getApiUrl } from "./environment";
 
 async function readJson<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as T;
@@ -12,12 +13,12 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 export async function fetchProject(): Promise<ProjectManifest> {
-  return readJson<ProjectManifest>(await fetch("/api/project"));
+  return readJson<ProjectManifest>(await fetch(getApiUrl("/api/project")));
 }
 
 export async function renderStory(request: RenderRequest): Promise<RenderResponse> {
   return readJson<RenderResponse>(
-    await fetch("/api/render", {
+    await fetch(getApiUrl("/api/render"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

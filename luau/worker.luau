@@ -61,6 +61,11 @@ local GUI_CLASSES = {
 
 local INSTANCE_SIGNALS = {
   AncestryChanged = true,
+  Changed = true,
+  ChildAdded = true,
+  ChildRemoved = true,
+  DescendantAdded = true,
+  DescendantRemoving = true,
   Destroying = true,
   InputBegan = true,
   InputChanged = true,
@@ -286,6 +291,10 @@ local function makeSignal()
   }
 
   function signal:Connect(callback)
+    if type(callback) ~= "function" then
+      error("RBXScriptSignal:Connect expects a function", 2)
+    end
+
     local connection = {
       __uiClapsConnection = true,
       Connected = true,
@@ -303,10 +312,25 @@ local function makeSignal()
     return connection
   end
 
+  function signal:Once(callback)
+    local connection
+    connection = self:Connect(function(...)
+      connection:Disconnect()
+      callback(...)
+    end)
+    return connection
+  end
+
   function signal:Fire(...)
     for _, listener in ipairs(listeners) do
       if listener.connection.Connected then
         listener.callback(...)
+      end
+    end
+
+    for index = #listeners, 1, -1 do
+      if not listeners[index].connection.Connected then
+        table.remove(listeners, index)
       end
     end
   end
@@ -318,20 +342,76 @@ local function makeSignal()
   return signal
 end
 
+local function getInstanceSignal(instance, signalName)
+  local signals = rawget(instance, "__uiClapsSignals")
+  if signals == nil then
+    return nil
+  end
+
+  signals[signalName] = signals[signalName] or makeSignal()
+  return signals[signalName]
+end
+
+local function fireInstanceSignal(instance, signalName, ...)
+  local signal = getInstanceSignal(instance, signalName)
+  if signal ~= nil then
+    signal:Fire(...)
+  end
+end
+
+local function firePropertyChanged(instance, property)
+  fireInstanceSignal(instance, "Changed", property)
+  fireInstanceSignal(instance, property)
+end
+
+local function visitSyntheticDescendants(instance, callback)
+  for _, child in ipairs(rawget(instance, "__uiClapsChildren") or {}) do
+    callback(child)
+    visitSyntheticDescendants(child, callback)
+  end
+end
+
+local function fireAncestorSignal(instance, signalName, descendant)
+  local current = instance
+  while current ~= nil do
+    fireInstanceSignal(current, signalName, descendant)
+    current = current.Parent
+  end
+end
+
 local function setSyntheticParent(instance, parent)
   local previous = rawget(instance, "__uiClapsParent")
   if previous == parent then
     return
   end
 
+  if previous ~= nil then
+    fireAncestorSignal(previous, "DescendantRemoving", instance)
+    visitSyntheticDescendants(instance, function(descendant)
+      fireAncestorSignal(previous, "DescendantRemoving", descendant)
+    end)
+  end
+
   removeChild(previous, instance)
   rawset(instance, "__uiClapsParent", parent)
   appendChild(parent, instance)
 
-  local ancestryChanged = instance.__uiClapsSignals.AncestryChanged
-  if ancestryChanged ~= nil then
-    ancestryChanged:Fire(instance, parent)
+  if previous ~= nil then
+    fireInstanceSignal(previous, "ChildRemoved", instance)
   end
+  if parent ~= nil then
+    fireInstanceSignal(parent, "ChildAdded", instance)
+    fireAncestorSignal(parent, "DescendantAdded", instance)
+    visitSyntheticDescendants(instance, function(descendant)
+      fireAncestorSignal(parent, "DescendantAdded", descendant)
+    end)
+  end
+
+  fireInstanceSignal(instance, "AncestryChanged", instance, parent)
+  visitSyntheticDescendants(instance, function(descendant)
+    fireInstanceSignal(descendant, "AncestryChanged", descendant, descendant.Parent)
+  end)
+  firePropertyChanged(instance, "Parent")
 end
 
 local function makeSyntheticInstance(className)
@@ -372,7 +452,7 @@ local function makeSyntheticInstance(className)
     return nil
   end
 
-  function methods:WaitForChild(childName)
+  function methods:WaitForChild(childName, _timeOut)
     return self:FindFirstChild(childName)
   end
 
@@ -396,11 +476,39 @@ local function makeSyntheticInstance(className)
     return descendants
   end
 
+  function methods:ClearAllChildren()
+    for _, child in ipairs(self:GetChildren()) do
+      child:Destroy()
+    end
+  end
+
   function methods:IsA(className)
     className = normalizeClassName(className)
     return self.ClassName == className
       or (className == "Instance" and isSyntheticInstance(self))
       or (className == "GuiObject" and GUI_CLASSES[self.ClassName] == true)
+  end
+
+  function methods:IsDescendantOf(ancestor)
+    local current = self.Parent
+    while current ~= nil do
+      if current == ancestor then
+        return true
+      end
+      current = current.Parent
+    end
+    return false
+  end
+
+  function methods:FindFirstAncestor(childName)
+    local current = self.Parent
+    while current ~= nil do
+      if current.Name == childName then
+        return current
+      end
+      current = current.Parent
+    end
+    return nil
   end
 
   function methods:FindFirstAncestorWhichIsA(className)
@@ -430,12 +538,22 @@ local function makeSyntheticInstance(className)
     return self.__uiClapsSignals[property]
   end
 
+  function methods:GetAttributeChangedSignal(attribute)
+    local signalName = "__attribute:" .. tostring(attribute)
+    self.__uiClapsSignals[signalName] = self.__uiClapsSignals[signalName] or makeSignal()
+    return self.__uiClapsSignals[signalName]
+  end
+
   function methods:GetAttribute(attribute)
     return self.__uiClapsAttributes[attribute]
   end
 
   function methods:SetAttribute(attribute, value)
     self.__uiClapsAttributes[attribute] = value
+    local signal = self.__uiClapsSignals["__attribute:" .. tostring(attribute)]
+    if signal ~= nil then
+      signal:Fire(value)
+    end
   end
 
   function methods:Clone()
@@ -454,6 +572,7 @@ local function makeSyntheticInstance(className)
   end
 
   function methods:Destroy()
+    fireInstanceSignal(self, "Destroying")
     for _, child in ipairs(self:GetChildren()) do
       child:Destroy()
     end
@@ -506,6 +625,7 @@ local function makeSyntheticInstance(className)
     __newindex = function(self, key, value)
       if key == "Name" then
         rawset(self, "__uiClapsName", tostring(value))
+        firePropertyChanged(self, "Name")
         return
       end
       if key == "Parent" then
@@ -517,10 +637,7 @@ local function makeSyntheticInstance(className)
       end
 
       rawget(self, "__uiClapsProperties")[key] = value
-      local signal = rawget(self, "__uiClapsSignals")[key]
-      if signal ~= nil then
-        signal:Fire(value)
-      end
+      firePropertyChanged(self, key)
     end,
   })
 end
@@ -549,7 +666,7 @@ local function makeInstanceProxy(node)
       end
 
       if key == "WaitForChild" then
-        return function(self, childName)
+        return function(self, childName, _timeOut)
           return self:FindFirstChild(childName)
         end
       end
@@ -590,12 +707,43 @@ local function makeInstanceProxy(node)
         end
       end
 
+      if key == "ClearAllChildren" then
+        return function()
+        end
+      end
+
       if key == "IsA" then
         return function(_, className)
           className = normalizeClassName(className)
           return node.className == className
             or (className == "Instance" and true)
             or (className == "GuiObject" and GUI_CLASSES[node.className] == true)
+        end
+      end
+
+      if key == "IsDescendantOf" then
+        return function(_, ancestor)
+          local current = node.Parent
+          while current ~= nil do
+            if makeInstanceProxy(current) == ancestor then
+              return true
+            end
+            current = current.Parent
+          end
+          return false
+        end
+      end
+
+      if key == "FindFirstAncestor" then
+        return function(_, childName)
+          local current = node.Parent
+          while current ~= nil do
+            if current.name == childName then
+              return makeInstanceProxy(current)
+            end
+            current = current.Parent
+          end
+          return nil
         end
       end
 
@@ -624,6 +772,12 @@ local function makeInstanceProxy(node)
         end
       end
 
+      if key == "GetPropertyChangedSignal" or key == "GetAttributeChangedSignal" then
+        return function()
+          return makeSignal()
+        end
+      end
+
       if key == "GetAttribute" then
         return function()
           return nil
@@ -641,6 +795,10 @@ local function makeInstanceProxy(node)
 
       if key == "AbsoluteSize" then
         return { X = 0, Y = 0 }
+      end
+
+      if INSTANCE_SIGNALS[key] then
+        return makeSignal()
       end
 
       local child = findRojoChild(node, key) or ensureUiClapsRuntimeChild(node, key)
@@ -670,18 +828,377 @@ local function createReflectionService()
   return service
 end
 
+local RENDER_PRIORITY_VALUES = {
+  First = 0,
+  Input = 100,
+  Camera = 200,
+  Character = 300,
+  Last = 2000,
+}
+
+local function renderPriorityValue(priority)
+  if type(priority) == "number" then
+    return priority
+  end
+
+  if type(priority) == "table" then
+    if type(priority.Value) == "number" then
+      return priority.Value
+    end
+
+    local serialized = priority.__uiClapsSerialized
+    if type(serialized) == "table" then
+      if type(serialized.value) == "number" then
+        return serialized.value
+      end
+      if serialized.enumType == "RenderPriority" and type(serialized.name) == "string" then
+        return RENDER_PRIORITY_VALUES[serialized.name] or 0
+      end
+    end
+  end
+
+  return 0
+end
+
 local function createRunService()
   local service = makeSyntheticInstance("RunService")
+  local renderBindings = {}
+  local renderBindingOrder = 0
+
+  service.PreRender = makeSignal()
+  service.RenderStepped = makeSignal()
+  service.PreAnimation = makeSignal()
+  service.PreSimulation = makeSignal()
+  service.PostSimulation = makeSignal()
   service.Heartbeat = makeSignal()
+  service.FixedHeartbeat = makeSignal()
+  service.Stepped = makeSignal()
+
+  function service:BindToRenderStep(name, priority, callback)
+    if type(name) ~= "string" then
+      error("RunService:BindToRenderStep expects a string name", 2)
+    end
+    if type(callback) ~= "function" then
+      error("RunService:BindToRenderStep expects a callback", 2)
+    end
+
+    renderBindingOrder += 1
+    renderBindings[name] = {
+      name = name,
+      priority = renderPriorityValue(priority),
+      callback = callback,
+      order = renderBindingOrder,
+    }
+  end
+
+  function service:UnbindFromRenderStep(name)
+    renderBindings[name] = nil
+  end
+
   function service:IsStudio()
     return false
   end
   function service:IsRunning()
-    return false
+    return true
   end
   function service:IsClient()
     return true
   end
+  function service:IsServer()
+    return false
+  end
+
+  function service:__uiClapsStep(deltaTime)
+    local bindings = {}
+    for _, binding in pairs(renderBindings) do
+      table.insert(bindings, binding)
+    end
+    table.sort(bindings, function(left, right)
+      if left.priority ~= right.priority then
+        return left.priority < right.priority
+      end
+      return left.order < right.order
+    end)
+
+    for _, binding in ipairs(bindings) do
+      if renderBindings[binding.name] == binding then
+        binding.callback(deltaTime)
+      end
+    end
+
+    self.PreRender:Fire(deltaTime)
+    self.RenderStepped:Fire(deltaTime)
+    self.PreAnimation:Fire(deltaTime)
+    self.PreSimulation:Fire(deltaTime)
+    self.Stepped:Fire(0, deltaTime)
+    self.PostSimulation:Fire(deltaTime)
+    self.Heartbeat:Fire(deltaTime)
+    self.FixedHeartbeat:Fire(deltaTime)
+  end
+
+  return service
+end
+
+local function createTweenService()
+  local service = makeSyntheticInstance("TweenService")
+
+  function service:Create(instance, _tweenInfo, goals)
+    if not isInstanceProxy(instance) then
+      error("TweenService:Create expects an Instance", 2)
+    end
+    if type(goals) ~= "table" then
+      error("TweenService:Create expects a property goal table", 2)
+    end
+
+    local tween = {
+      Completed = makeSignal(),
+      PlaybackState = "Begin",
+    }
+
+    function tween:Play()
+      self.PlaybackState = "Playing"
+      for key, value in pairs(goals) do
+        instance[key] = value
+      end
+      self.PlaybackState = "Completed"
+      self.Completed:Fire("Completed")
+    end
+
+    function tween:Pause()
+      self.PlaybackState = "Paused"
+    end
+
+    function tween:Cancel()
+      self.PlaybackState = "Cancelled"
+      self.Completed:Fire("Cancelled")
+    end
+
+    function tween:Destroy()
+      self.PlaybackState = "Cancelled"
+    end
+
+    return tween
+  end
+
+  function service:GetValue(alpha)
+    return alpha
+  end
+
+  return service
+end
+
+local function createUserInputService()
+  local service = makeSyntheticInstance("UserInputService")
+  service.InputBegan = makeSignal()
+  service.InputChanged = makeSignal()
+  service.InputEnded = makeSignal()
+  service.JumpRequest = makeSignal()
+  service.LastInputTypeChanged = makeSignal()
+  service.TouchEnabled = false
+  service.MouseEnabled = true
+  service.KeyboardEnabled = true
+  service.GamepadEnabled = false
+  service.VREnabled = false
+
+  function service:GetMouseLocation()
+    return { X = 0, Y = 0 }
+  end
+  function service:IsKeyDown()
+    return false
+  end
+  function service:IsMouseButtonPressed()
+    return false
+  end
+  function service:GetKeysPressed()
+    return {}
+  end
+  function service:GetMouseButtonsPressed()
+    return {}
+  end
+  function service:GetConnectedGamepads()
+    return {}
+  end
+
+  return service
+end
+
+local function createGuiService()
+  local service = makeSyntheticInstance("GuiService")
+  service.MenuOpened = makeSignal()
+  service.MenuClosed = makeSignal()
+  service.GuiVisibilityChangedSignal = makeSignal()
+
+  function service:GetGuiInset()
+    return { X = 0, Y = 0 }, { X = 0, Y = 0 }
+  end
+  function service:GetScreenResolution()
+    return { X = 0, Y = 0 }
+  end
+  function service:IsTenFootInterface()
+    return false
+  end
+
+  return service
+end
+
+local function createContextActionService()
+  local service = makeSyntheticInstance("ContextActionService")
+  local boundActions = {}
+
+  function service:BindAction(actionName, callback, createTouchButton, ...)
+    boundActions[actionName] = {
+      callback = callback,
+      createTouchButton = createTouchButton == true,
+      inputs = { ... },
+    }
+  end
+  function service:BindActionAtPriority(actionName, callback, createTouchButton, priority, ...)
+    boundActions[actionName] = {
+      callback = callback,
+      createTouchButton = createTouchButton == true,
+      priority = priority,
+      inputs = { ... },
+    }
+  end
+  function service:UnbindAction(actionName)
+    boundActions[actionName] = nil
+  end
+  function service:UnbindAllActions()
+    boundActions = {}
+  end
+  function service:GetAllBoundActionInfo()
+    return boundActions
+  end
+  function service:GetBoundActionInfo(actionName)
+    return boundActions[actionName]
+  end
+
+  return service
+end
+
+local function createCollectionService()
+  local service = makeSyntheticInstance("CollectionService")
+  local tagsByInstance = {}
+  local addedSignals = {}
+  local removedSignals = {}
+
+  local function tagsFor(instance)
+    tagsByInstance[instance] = tagsByInstance[instance] or {}
+    return tagsByInstance[instance]
+  end
+
+  function service:AddTag(instance, tag)
+    local tags = tagsFor(instance)
+    if tags[tag] == true then
+      return
+    end
+    tags[tag] = true
+    if addedSignals[tag] ~= nil then
+      addedSignals[tag]:Fire(instance)
+    end
+  end
+  function service:RemoveTag(instance, tag)
+    local tags = tagsFor(instance)
+    if tags[tag] ~= true then
+      return
+    end
+    tags[tag] = nil
+    if removedSignals[tag] ~= nil then
+      removedSignals[tag]:Fire(instance)
+    end
+  end
+  function service:HasTag(instance, tag)
+    local tags = tagsByInstance[instance]
+    return tags ~= nil and tags[tag] == true
+  end
+  function service:GetTags(instance)
+    local result = {}
+    for tag in pairs(tagsByInstance[instance] or {}) do
+      table.insert(result, tag)
+    end
+    return result
+  end
+  function service:GetTagged(tag)
+    local result = {}
+    for instance, tags in pairs(tagsByInstance) do
+      if tags[tag] == true then
+        table.insert(result, instance)
+      end
+    end
+    return result
+  end
+  function service:GetInstanceAddedSignal(tag)
+    addedSignals[tag] = addedSignals[tag] or makeSignal()
+    return addedSignals[tag]
+  end
+  function service:GetInstanceRemovedSignal(tag)
+    removedSignals[tag] = removedSignals[tag] or makeSignal()
+    return removedSignals[tag]
+  end
+
+  return service
+end
+
+local function createContentProvider()
+  local service = makeSyntheticInstance("ContentProvider")
+  service.AssetFetchFailed = makeSignal()
+
+  function service:PreloadAsync(_assets, callback)
+    if type(callback) == "function" then
+      callback("", "Success")
+    end
+  end
+  function service:GetAssetFetchStatus()
+    return "Success"
+  end
+  function service:GetAssetFetchStatusChangedSignal()
+    return makeSignal()
+  end
+
+  return service
+end
+
+local function createTextService()
+  local service = makeSyntheticInstance("TextService")
+
+  function service:GetTextSize(text, textSize, _font, bounds)
+    local size = tonumber(textSize) or 14
+    local width = math.ceil(#tostring(text or "") * size * 0.55)
+    local height = math.ceil(size)
+    if type(bounds) == "table" and type(bounds.X) == "number" and bounds.X > 0 then
+      width = math.min(width, bounds.X)
+    end
+    return { X = width, Y = height }
+  end
+
+  function service:GetTextBoundsAsync(params)
+    params = params or {}
+    return self:GetTextSize(params.Text or "", params.Size or params.TextSize or 14, params.Font, params.Width or params.Bounds)
+  end
+
+  return service
+end
+
+local function createHttpService()
+  local service = makeSyntheticInstance("HttpService")
+
+  function service:JSONEncode(value)
+    return serde.json.encode(value)
+  end
+  function service:JSONDecode(value)
+    return serde.json.decode(value)
+  end
+  function service:GenerateGUID(wrapInCurlyBraces)
+    local guid = "00000000-0000-4000-8000-000000000000"
+    return if wrapInCurlyBraces == false then guid else "{" .. guid .. "}"
+  end
+  function service:UrlEncode(value)
+    local encoded = tostring(value or ""):gsub("([^%w%-_%.~])", function(char)
+      return string.format("%%%02X", string.byte(char))
+    end)
+    return encoded
+  end
+
   return service
 end
 
@@ -713,6 +1230,22 @@ local function getSyntheticService(serviceName)
   local service
   if serviceName == "RunService" then
     service = createRunService()
+  elseif serviceName == "TweenService" then
+    service = createTweenService()
+  elseif serviceName == "UserInputService" then
+    service = createUserInputService()
+  elseif serviceName == "GuiService" then
+    service = createGuiService()
+  elseif serviceName == "ContextActionService" then
+    service = createContextActionService()
+  elseif serviceName == "CollectionService" then
+    service = createCollectionService()
+  elseif serviceName == "ContentProvider" then
+    service = createContentProvider()
+  elseif serviceName == "TextService" then
+    service = createTextService()
+  elseif serviceName == "HttpService" then
+    service = createHttpService()
   elseif serviceName == "ReflectionService" then
     service = createReflectionService()
   elseif serviceName == "Players" then
@@ -1108,6 +1641,13 @@ local function runCleanup(cleanups)
   end
 end
 
+local function pumpPreviewFrame()
+  local runService = syntheticServices.RunService
+  if type(runService) == "table" and type(runService.__uiClapsStep) == "function" then
+    runService:__uiClapsStep(1 / 60)
+  end
+end
+
 local function prepareRovyUiRuntime(runtimeConfig, baseCtx)
   local rovyUi = requireRovyUi()
   local rawRoots = baseCtx.target
@@ -1276,6 +1816,7 @@ local function renderRovyVideStory(story, props)
     app:flush()
   end
 
+  pumpPreviewFrame()
   local tree = serializePreviewTargetChildren(target)
 
   if type(handle) == "table" and type(handle.destroy) == "function" then
@@ -1329,6 +1870,7 @@ local function renderRovyStory(story, props)
       app:flush()
     end
 
+    pumpPreviewFrame()
     return serializePreviewTargetChildren(target)
   end, debug.traceback)
 
@@ -1398,6 +1940,7 @@ local ok, response = xpcall(function()
       tree = renderRovyStory(story, props)
     elseif type(story.render) == "function" then
       tree = story.render(props)
+      pumpPreviewFrame()
     else
       error("Story table must include render(props).")
     end
