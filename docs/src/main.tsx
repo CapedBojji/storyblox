@@ -1,5 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { useState } from "react";
 import "./styles.css";
 
 const plainStory = `return {
@@ -100,6 +101,18 @@ function App() {
         </div>
       </section>
 
+      <section className="demo-band">
+        <div className="section-heading">
+          <p className="eyebrow">Live demo</p>
+          <h2>Adjust controls and watch the story change.</h2>
+          <p>
+            This browser demo mirrors the StoryBlox control loop: props change, the story rerenders,
+            and the Roblox-style preview updates immediately.
+          </p>
+        </div>
+        <LiveDemo />
+      </section>
+
       <section id="start" className="band">
         <div>
           <p className="eyebrow">Install</p>
@@ -139,7 +152,158 @@ function App() {
           <CodeBlock title="Rovy UI" code={rovyUiStory} />
         </div>
       </section>
+
+      <section className="api-section" id="api">
+        <div className="section-heading">
+          <p className="eyebrow">API reference</p>
+          <h2>What StoryBlox exposes.</h2>
+          <p>
+            These are the public story shapes, adapter helpers, controls, config fields, and Rovy
+            helpers available to stories today.
+          </p>
+        </div>
+
+        <ApiGroup
+          title="Story module"
+          items={[
+            ["name", "Optional display name for the story."],
+            ["controls", "Optional table of control definitions used to build the controls panel."],
+            ["render(props)", "Required for plain stories. Returns a Roblox Instance tree, an array of Instances, or a UI.create tree."],
+          ]}
+        />
+
+        <ApiGroup
+          title="Adapter"
+          items={[
+            ["UI.create(className, props?, children?)", "Creates a serializable Roblox UI node for previews."],
+            ["UI.control.*", "Creates control definitions with defaults, labels, descriptions, ranges, and options."],
+            ["UI.rovy.story(config)", "Creates a first-party Rovy story with app, runtime, render, and cleanup hooks."],
+            ["UI.rovyVide.story(config)", "Creates a first-party Rovy/Vide story that mounts a view through @rovy/vide."],
+          ]}
+        />
+
+        <ApiGroup
+          title="Controls"
+          items={[
+            ["string(default?, options?)", "Text input control."],
+            ["boolean(default?, options?)", "Toggle control."],
+            ["number(default?, options?)", "Numeric input with optional min, max, and step."],
+            ["slider(default?, min?, max?, step?, options?)", "Range slider with a paired numeric value."],
+            ["color(default?, options?)", "Color picker backed by Roblox Color3 values."],
+            ["select(default, options)", "Single-select dropdown using labeled options."],
+            ["radio(default, options)", "Single-select radio group."],
+            ["check(default, options)", "Checkbox group for multiple selections."],
+            ["multiselect(default, options)", "Multi-select list control."],
+            ["object(default, options?)", "JSON-like object editor for structured props."],
+            ["udim(default?, options?)", "Roblox UDim editor with scale and offset fields."],
+            ["udim2(default?, options?)", "Roblox UDim2 editor with X/Y scale and offset fields."],
+          ]}
+        />
+
+        <ApiGroup
+          title="Config"
+          items={[
+            ["root", "Project source root."],
+            ["storyRoot", "Directory StoryBlox searches for compiled .story.luau files. Defaults to root."],
+            ["rojoProject", "Rojo project file used to resolve modules and Roblox services."],
+            ["zuneCommand", "Optional executable path or command name for Zune."],
+          ]}
+        />
+
+        <ApiGroup
+          title="Rovy"
+          items={[
+            ["rovyVide.story({ view, bootstrap, controls? })", "Bootstraps an app, mounts the view into the preview target, flushes the app when supported, and cleans up the mount handle."],
+            ["rovy.story({ app, runtime?, render, cleanup?, controls? })", "Creates an app context, prepares the selected runtime, renders Instances or callbacks, then runs cleanup."],
+            ["runtime: \"rovy-ui\"", "Creates a default @rovy/ui root and allows render to return a frame callback."],
+            ["runtime: { kind: \"rovy-ui\", roots }", "Uses custom Rovy UI root Instances."],
+            ["runtime: function(ctx)", "Supplies a custom runtime value on ctx.runtime."],
+          ]}
+        />
+      </section>
     </main>
+  );
+}
+
+function LiveDemo() {
+  const [text, setText] = useState("Play");
+  const [accent, setAccent] = useState("#00aaff");
+  const [width, setWidth] = useState(210);
+  const [rounded, setRounded] = useState(true);
+  const [disabled, setDisabled] = useState(false);
+
+  return (
+    <div className="demo-panel">
+      <div className="demo-stage">
+        <div
+          className={disabled ? "demo-button disabled" : "demo-button"}
+          style={{
+            width,
+            backgroundColor: disabled ? "#9aa5ad" : accent,
+            borderRadius: rounded ? 10 : 2,
+          }}
+        >
+          {text || "Button"}
+        </div>
+      </div>
+      <div className="demo-controls" aria-label="Interactive story controls">
+        <label>
+          <span>Text</span>
+          <input value={text} onChange={(event) => setText(event.target.value)} />
+        </label>
+        <label>
+          <span>Accent</span>
+          <input
+            type="color"
+            value={accent}
+            onChange={(event) => setAccent(event.target.value)}
+          />
+        </label>
+        <label>
+          <span>Width</span>
+          <input
+            type="range"
+            min="120"
+            max="320"
+            step="4"
+            value={width}
+            onChange={(event) => setWidth(Number(event.target.value))}
+          />
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={rounded}
+            onChange={(event) => setRounded(event.target.checked)}
+          />
+          <span>Rounded corners</span>
+        </label>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={disabled}
+            onChange={(event) => setDisabled(event.target.checked)}
+          />
+          <span>Disabled</span>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function ApiGroup({ title, items }: { title: string; items: Array<[string, string]> }) {
+  return (
+    <article className="api-group">
+      <h3>{title}</h3>
+      <dl>
+        {items.map(([name, description]) => (
+          <div key={name}>
+            <dt>{name}</dt>
+            <dd>{description}</dd>
+          </div>
+        ))}
+      </dl>
+    </article>
   );
 }
 
