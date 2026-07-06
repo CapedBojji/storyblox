@@ -239,6 +239,9 @@ p {
 
 .demo-stage {
   display: grid;
+  align-content: center;
+  gap: 16px;
+  justify-items: center;
   place-items: center;
   min-width: 0;
   padding: 30px;
@@ -250,14 +253,18 @@ p {
 }
 
 .demo-button {
+  border: 0;
   display: grid;
   max-width: 100%;
   min-height: 58px;
   place-items: center;
   padding: 0 18px;
   color: #ffffff;
+  cursor: pointer;
+  font: inherit;
   font-weight: 900;
   box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.14);
+  touch-action: manipulation;
   transition:
     width 180ms ease,
     background-color 180ms ease,
@@ -265,10 +272,32 @@ p {
     transform 180ms ease;
 }
 
+.demo-button:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14);
+}
+
+.demo-button:focus-visible {
+  outline: 3px solid rgba(0, 108, 143, 0.34);
+  outline-offset: 4px;
+}
+
 .demo-button.disabled {
   transform: translateY(3px);
   color: #eef3f5;
+  cursor: not-allowed;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+}
+
+.demo-readout {
+  min-height: 32px;
+  border: 1px solid #dce4e7;
+  border-radius: 999px;
+  padding: 7px 13px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #43505a;
+  font-size: 0.9rem;
+  font-weight: 800;
 }
 
 .demo-controls {
@@ -279,6 +308,33 @@ p {
   padding: clamp(22px, 4vw, 40px);
   border-left: 1px solid #dce4e7;
   background: #f8fafb;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preset-row button {
+  min-height: 42px;
+  border: 1px solid #b9c8ce;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #26323a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  touch-action: manipulation;
+}
+
+.preset-row button:active {
+  transform: translateY(2px);
+}
+
+.preset-row button:focus-visible {
+  outline: 3px solid rgba(0, 108, 143, 0.26);
+  outline-offset: 2px;
 }
 
 .demo-controls label {

@@ -231,12 +231,22 @@ function LiveDemo() {
   const [width, setWidth] = useState(210);
   const [rounded, setRounded] = useState(true);
   const [disabled, setDisabled] = useState(false);
+  const [presses, setPresses] = useState(0);
+
+  const presets = [
+    { label: "Play", text: "Play", accent: "#00aaff", width: 210, rounded: true },
+    { label: "Buy", text: "Buy item", accent: "#18a957", width: 240, rounded: true },
+    { label: "Alert", text: "Warning", accent: "#e24329", width: 190, rounded: false },
+  ];
 
   return (
     <div className="demo-panel">
       <div className="demo-stage">
-        <div
+        <button
+          type="button"
           className={disabled ? "demo-button disabled" : "demo-button"}
+          disabled={disabled}
+          onClick={() => setPresses((count) => count + 1)}
           style={{
             width,
             backgroundColor: disabled ? "#9aa5ad" : accent,
@@ -244,9 +254,29 @@ function LiveDemo() {
           }}
         >
           {text || "Button"}
+        </button>
+        <div className="demo-readout" aria-live="polite">
+          {disabled ? "Button disabled" : presses === 0 ? "Tap the preview button" : `Pressed ${presses} time${presses === 1 ? "" : "s"}`}
         </div>
       </div>
       <div className="demo-controls" aria-label="Interactive story controls">
+        <div className="preset-row" aria-label="Story presets">
+          {presets.map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => {
+                setText(preset.text);
+                setAccent(preset.accent);
+                setWidth(preset.width);
+                setRounded(preset.rounded);
+                setDisabled(false);
+              }}
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
         <label>
           <span>Text</span>
           <input value={text} onChange={(event) => setText(event.target.value)} />
