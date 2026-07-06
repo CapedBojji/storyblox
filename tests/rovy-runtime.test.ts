@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,9 +10,10 @@ import { loadRojoModel } from "../src/node/rojo.js";
 import { renderStory } from "../src/node/zune.js";
 import type { ResolvedUiClapsConfig } from "../src/node/types.js";
 
-const zunePath = execFileSync("mise", ["which", "zune"], { encoding: "utf8" }).trim();
+const zunePath = resolveZuneCommand();
+const describeWithZune = zunePath ? describe : describe.skip;
 
-describe("rovy runtime stories", () => {
+describeWithZune("rovy runtime stories", () => {
   test("captures story print and warn output", async () => {
     const project = await createRovyFixture({
       story: `
@@ -247,6 +248,19 @@ return UI.rovy:story({
     );
   });
 });
+
+function resolveZuneCommand(): string | null {
+  const direct = spawnSync("zune", ["--version"], { stdio: "ignore" });
+  if (direct.status === 0) {
+    return "zune";
+  }
+
+  try {
+    return execFileSync("mise", ["which", "zune"], { encoding: "utf8" }).trim();
+  } catch {
+    return null;
+  }
+}
 
 async function createRovyFixture(options: {
   story: string;
