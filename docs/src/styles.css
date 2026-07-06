@@ -117,6 +117,11 @@ p {
   color: #151d24;
 }
 
+.hero-actions a:nth-child(2) {
+  background: #ffffff;
+  color: #151d24;
+}
+
 .preview-shell {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
@@ -227,17 +232,109 @@ p {
   border-top: 1px solid rgba(18, 26, 32, 0.12);
 }
 
-.demo-panel {
+.editor-demo {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
-  min-height: 430px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  min-height: 560px;
   overflow: hidden;
   border: 1px solid #dce4e7;
   border-radius: 8px;
   background: #f8fafb;
 }
 
-.demo-stage {
+.editor-pane {
+  display: grid;
+  grid-template-rows: auto minmax(360px, 1fr) auto;
+  min-width: 0;
+  background: #10171d;
+}
+
+.editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0 14px;
+  color: #c8d5da;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.editor-toolbar button,
+.reference-link-panel a {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #151d24;
+  border-radius: 7px;
+  padding: 0 14px;
+  background: #ffffff;
+  color: #151d24;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  text-decoration: none;
+  touch-action: manipulation;
+}
+
+.editor-pane textarea {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 18px;
+  background: #10171d;
+  color: #e9f1f4;
+  font-family:
+    SFMono-Regular,
+    Consolas,
+    Liberation Mono,
+    monospace;
+  font-size: 0.88rem;
+  line-height: 1.62;
+}
+
+.editor-status {
+  min-height: 42px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 11px 14px;
+  background: #13251c;
+  color: #98e8b6;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.editor-status.error {
+  background: #311816;
+  color: #ffb4a8;
+}
+
+.story-preview-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  border-left: 1px solid #dce4e7;
+}
+
+.story-preview-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+  align-items: center;
+  border-bottom: 1px solid #dce4e7;
+  padding: 0 14px;
+  color: #50606b;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.story-preview-stage {
   display: grid;
   align-content: center;
   gap: 16px;
@@ -287,17 +384,6 @@ p {
   color: #eef3f5;
   cursor: not-allowed;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
-}
-
-.demo-readout {
-  min-height: 32px;
-  border: 1px solid #dce4e7;
-  border-radius: 999px;
-  padding: 7px 13px;
-  background: rgba(255, 255, 255, 0.86);
-  color: #43505a;
-  font-size: 0.9rem;
-  font-weight: 800;
 }
 
 .demo-controls {
@@ -397,6 +483,47 @@ article h2 {
 
 .rovy {
   background: #111b21;
+}
+
+.reference-link-panel {
+  display: grid;
+  align-content: center;
+  min-height: 180px;
+  border: 1px solid #dce4e7;
+  border-radius: 8px;
+  padding: 24px;
+  background: #f8fafb;
+}
+
+.reference-link-panel a {
+  justify-self: start;
+  background: #151d24;
+  color: #ffffff;
+}
+
+.api-hero {
+  padding: clamp(34px, 7vw, 96px);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0) 45%),
+    linear-gradient(120deg, #f6f1e8 0%, #eff6f7 100%);
+}
+
+.api-hero h1 {
+  max-width: 980px;
+  font-size: clamp(3.5rem, 10vw, 8rem);
+}
+
+.back-link {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  border: 1px solid #151d24;
+  border-radius: 7px;
+  padding: 0 13px;
+  margin-bottom: 30px;
+  color: #151d24;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .api-section {
@@ -504,7 +631,7 @@ code {
   .hero,
   .band,
   .split,
-  .demo-panel {
+  .editor-demo {
     grid-template-columns: 1fr;
   }
 
@@ -521,6 +648,7 @@ code {
     display: none;
   }
 
+  .story-preview-pane,
   .demo-controls {
     border-top: 1px solid #dce4e7;
     border-left: 0;
@@ -537,7 +665,8 @@ code {
   .band,
   .split,
   .demo-band,
-  .api-section {
+  .api-section,
+  .api-hero {
     padding: 30px 18px;
   }
 

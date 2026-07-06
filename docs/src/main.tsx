@@ -3,6 +3,34 @@ import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import "./styles.css";
 
+const defaultStoryCode = `return {
+  name = "Primary Button",
+  render = function()
+    local button = Instance.new("TextButton")
+    button.Name = "PrimaryButton"
+    button.Size = UDim2.fromOffset(220, 56)
+    button.Text = "Play"
+    button.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 10)
+    corner.Parent = button
+
+    return button
+  end,
+}`;
+
+interface DemoStory {
+  name: string;
+  text: string;
+  width: number;
+  height: number;
+  background: string;
+  textColor: string;
+  radius: number;
+}
+
 const plainStory = `return {
   name = "Primary Button",
   render = function()
@@ -80,6 +108,7 @@ function App() {
           </p>
           <div className="hero-actions">
             <a href="#start">Get started</a>
+            <a href="/storyblox/api/">API reference</a>
             <a href="https://github.com/CapedBojji/storyblox">GitHub</a>
           </div>
         </div>
@@ -104,13 +133,13 @@ function App() {
       <section className="demo-band">
         <div className="section-heading">
           <p className="eyebrow">Live demo</p>
-          <h2>Adjust controls and watch the story change.</h2>
+          <h2>Edit a Roblox story and see the preview update.</h2>
           <p>
-            This browser demo mirrors the StoryBlox control loop: props change, the story rerenders,
-            and the Roblox-style preview updates immediately.
+            Change the single story below. Valid edits update the preview immediately; invalid edits
+            keep the last good preview and show the parser error.
           </p>
         </div>
-        <LiveDemo />
+        <StoryEditorDemo />
       </section>
 
       <section id="start" className="band">
@@ -153,188 +182,148 @@ function App() {
         </div>
       </section>
 
-      <section className="api-section" id="api">
-        <div className="section-heading">
-          <p className="eyebrow">API reference</p>
-          <h2>What StoryBlox exposes.</h2>
-          <p>
-            These are the public story shapes, adapter helpers, controls, config fields, and Rovy
-            helpers available to stories today.
-          </p>
+      <section className="band">
+        <div>
+          <p className="eyebrow">Reference</p>
+          <h2>Need the full surface area?</h2>
+          <p>The API reference now lives on its own page with story, adapter, control, config, and Rovy details.</p>
         </div>
-
-        <ApiGroup
-          title="Story module"
-          items={[
-            ["name", "Optional display name for the story."],
-            ["controls", "Optional table of control definitions used to build the controls panel."],
-            ["render(props)", "Required for plain stories. Returns a Roblox Instance tree, an array of Instances, or a UI.create tree."],
-          ]}
-        />
-
-        <ApiGroup
-          title="Adapter"
-          items={[
-            ["UI.create(className, props?, children?)", "Creates a serializable Roblox UI node for previews."],
-            ["UI.control.*", "Creates control definitions with defaults, labels, descriptions, ranges, and options."],
-            ["UI.rovy.story(config)", "Creates a first-party Rovy story with app, runtime, render, and cleanup hooks."],
-            ["UI.rovyVide.story(config)", "Creates a first-party Rovy/Vide story that mounts a view through @rovy/vide."],
-          ]}
-        />
-
-        <ApiGroup
-          title="Controls"
-          items={[
-            ["string(default?, options?)", "Text input control."],
-            ["boolean(default?, options?)", "Toggle control."],
-            ["number(default?, options?)", "Numeric input with optional min, max, and step."],
-            ["slider(default?, min?, max?, step?, options?)", "Range slider with a paired numeric value."],
-            ["color(default?, options?)", "Color picker backed by Roblox Color3 values."],
-            ["select(default, options)", "Single-select dropdown using labeled options."],
-            ["radio(default, options)", "Single-select radio group."],
-            ["check(default, options)", "Checkbox group for multiple selections."],
-            ["multiselect(default, options)", "Multi-select list control."],
-            ["object(default, options?)", "JSON-like object editor for structured props."],
-            ["udim(default?, options?)", "Roblox UDim editor with scale and offset fields."],
-            ["udim2(default?, options?)", "Roblox UDim2 editor with X/Y scale and offset fields."],
-          ]}
-        />
-
-        <ApiGroup
-          title="Config"
-          items={[
-            ["root", "Project source root."],
-            ["storyRoot", "Directory StoryBlox searches for compiled .story.luau files. Defaults to root."],
-            ["rojoProject", "Rojo project file used to resolve modules and Roblox services."],
-            ["zuneCommand", "Optional executable path or command name for Zune."],
-          ]}
-        />
-
-        <ApiGroup
-          title="Rovy"
-          items={[
-            ["rovyVide.story({ view, bootstrap, controls? })", "Bootstraps an app, mounts the view into the preview target, flushes the app when supported, and cleans up the mount handle."],
-            ["rovy.story({ app, runtime?, render, cleanup?, controls? })", "Creates an app context, prepares the selected runtime, renders Instances or callbacks, then runs cleanup."],
-            ["runtime: \"rovy-ui\"", "Creates a default @rovy/ui root and allows render to return a frame callback."],
-            ["runtime: { kind: \"rovy-ui\", roots }", "Uses custom Rovy UI root Instances."],
-            ["runtime: function(ctx)", "Supplies a custom runtime value on ctx.runtime."],
-          ]}
-        />
+        <div className="reference-link-panel">
+          <a href="/storyblox/api/">Open API reference</a>
+        </div>
       </section>
     </main>
   );
 }
 
-function LiveDemo() {
-  const [text, setText] = useState("Play");
-  const [accent, setAccent] = useState("#00aaff");
-  const [width, setWidth] = useState(210);
-  const [rounded, setRounded] = useState(true);
-  const [disabled, setDisabled] = useState(false);
-  const [presses, setPresses] = useState(0);
+function StoryEditorDemo() {
+  const initialStory = parseStory(defaultStoryCode);
+  const [code, setCode] = useState(defaultStoryCode);
+  const [preview, setPreview] = useState<DemoStory>(initialStory);
+  const [error, setError] = useState<string | null>(null);
 
-  const presets = [
-    { label: "Play", text: "Play", accent: "#00aaff", width: 210, rounded: true },
-    { label: "Buy", text: "Buy item", accent: "#18a957", width: 240, rounded: true },
-    { label: "Alert", text: "Warning", accent: "#e24329", width: 190, rounded: false },
-  ];
+  function updateCode(nextCode: string) {
+    setCode(nextCode);
+    try {
+      setPreview(parseStory(nextCode));
+      setError(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Story could not be parsed.");
+    }
+  }
+
+  function resetCode() {
+    setCode(defaultStoryCode);
+    setPreview(initialStory);
+    setError(null);
+  }
 
   return (
-    <div className="demo-panel">
-      <div className="demo-stage">
-        <button
-          type="button"
-          className={disabled ? "demo-button disabled" : "demo-button"}
-          disabled={disabled}
-          onClick={() => setPresses((count) => count + 1)}
-          style={{
-            width,
-            backgroundColor: disabled ? "#9aa5ad" : accent,
-            borderRadius: rounded ? 10 : 2,
-          }}
-        >
-          {text || "Button"}
-        </button>
-        <div className="demo-readout" aria-live="polite">
-          {disabled ? "Button disabled" : presses === 0 ? "Tap the preview button" : `Pressed ${presses} time${presses === 1 ? "" : "s"}`}
+    <div className="editor-demo">
+      <div className="editor-pane">
+        <div className="editor-toolbar">
+          <span>PrimaryButton.story.luau</span>
+          <button type="button" onClick={resetCode}>
+            Reset
+          </button>
+        </div>
+        <textarea
+          spellCheck={false}
+          value={code}
+          onChange={(event) => updateCode(event.target.value)}
+          aria-label="Editable Roblox story code"
+        />
+        <div className={error ? "editor-status error" : "editor-status"}>
+          {error ?? "Story parsed. Preview is up to date."}
         </div>
       </div>
-      <div className="demo-controls" aria-label="Interactive story controls">
-        <div className="preset-row" aria-label="Story presets">
-          {presets.map((preset) => (
-            <button
-              key={preset.label}
-              type="button"
-              onClick={() => {
-                setText(preset.text);
-                setAccent(preset.accent);
-                setWidth(preset.width);
-                setRounded(preset.rounded);
-                setDisabled(false);
-              }}
-            >
-              {preset.label}
-            </button>
-          ))}
+      <div className="story-preview-pane">
+        <div className="story-preview-header">
+          <span>{preview.name}</span>
+          <span>{preview.width} x {preview.height}</span>
         </div>
-        <label>
-          <span>Text</span>
-          <input value={text} onChange={(event) => setText(event.target.value)} />
-        </label>
-        <label>
-          <span>Accent</span>
-          <input
-            type="color"
-            value={accent}
-            onChange={(event) => setAccent(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Width</span>
-          <input
-            type="range"
-            min="120"
-            max="320"
-            step="4"
-            value={width}
-            onChange={(event) => setWidth(Number(event.target.value))}
-          />
-        </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={rounded}
-            onChange={(event) => setRounded(event.target.checked)}
-          />
-          <span>Rounded corners</span>
-        </label>
-        <label className="check-row">
-          <input
-            type="checkbox"
-            checked={disabled}
-            onChange={(event) => setDisabled(event.target.checked)}
-          />
-          <span>Disabled</span>
-        </label>
+        <div className="story-preview-stage">
+        <button
+          type="button"
+          className="demo-button"
+          style={{
+            width: preview.width,
+            minHeight: preview.height,
+            backgroundColor: preview.background,
+            borderRadius: preview.radius,
+            color: preview.textColor,
+          }}
+        >
+          {preview.text}
+        </button>
+      </div>
       </div>
     </div>
   );
 }
 
-function ApiGroup({ title, items }: { title: string; items: Array<[string, string]> }) {
-  return (
-    <article className="api-group">
-      <h3>{title}</h3>
-      <dl>
-        {items.map(([name, description]) => (
-          <div key={name}>
-            <dt>{name}</dt>
-            <dd>{description}</dd>
-          </div>
-        ))}
-      </dl>
-    </article>
-  );
+function parseStory(source: string): DemoStory {
+  if (!/render\s*=\s*function\s*\(\)/.test(source)) {
+    throw new Error("Expected render = function() in the story.");
+  }
+  if (!/Instance\.new\("TextButton"\)/.test(source)) {
+    throw new Error("This demo expects Instance.new(\"TextButton\").");
+  }
+  if (!/return\s+button/.test(source)) {
+    throw new Error("Expected the story to return button.");
+  }
+
+  const width = readPair(source, "Size", /button\.Size\s*=\s*UDim2\.fromOffset\(([-\d.]+)\s*,\s*([-\d.]+)\)/);
+  const background = readColor(source, "BackgroundColor3", /button\.BackgroundColor3\s*=\s*Color3\.fromRGB\(([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\)/);
+  const textColor = readColor(source, "TextColor3", /button\.TextColor3\s*=\s*Color3\.fromRGB\(([-\d.]+)\s*,\s*([-\d.]+)\s*,\s*([-\d.]+)\)/);
+
+  return {
+    name: readString(source, "name", /name\s*=\s*"([^"]*)"/),
+    text: readString(source, "Text", /button\.Text\s*=\s*"([^"]*)"/),
+    width: clamp(width[0], 96, 360),
+    height: clamp(width[1], 36, 120),
+    background,
+    textColor,
+    radius: clamp(readNumber(source, "CornerRadius", /corner\.CornerRadius\s*=\s*UDim\.new\(0\s*,\s*([-\d.]+)\)/), 0, 28),
+  };
+}
+
+function readString(source: string, label: string, pattern: RegExp): string {
+  const match = source.match(pattern);
+  if (!match?.[1]) throw new Error(`Missing ${label}.`);
+  return match[1];
+}
+
+function readPair(source: string, label: string, pattern: RegExp): [number, number] {
+  const match = source.match(pattern);
+  if (!match?.[1] || !match[2]) throw new Error(`Missing ${label}.`);
+  return [toNumber(match[1], label), toNumber(match[2], label)];
+}
+
+function readColor(source: string, label: string, pattern: RegExp): string {
+  const match = source.match(pattern);
+  if (!match?.[1] || !match[2] || !match[3]) throw new Error(`Missing ${label}.`);
+  const channels = [toNumber(match[1], label), toNumber(match[2], label), toNumber(match[3], label)];
+  if (channels.some((channel) => channel < 0 || channel > 255)) {
+    throw new Error(`${label} values must be between 0 and 255.`);
+  }
+  return `rgb(${channels.join(" ")})`;
+}
+
+function readNumber(source: string, label: string, pattern: RegExp): number {
+  const match = source.match(pattern);
+  if (!match?.[1]) throw new Error(`Missing ${label}.`);
+  return toNumber(match[1], label);
+}
+
+function toNumber(value: string, label: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${label} must be a number.`);
+  return parsed;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
 }
 
 function Article({ title, body, code }: { title: string; body: string; code: string }) {
