@@ -1,14 +1,27 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource/nunito-sans/400.css";
+import "@fontsource/nunito-sans/700.css";
+import "@fontsource/nunito-sans/800.css";
 import "./styles.css";
 
 function ApiPage() {
   return (
-    <main>
+    <>
+      <header className="site-nav">
+        <div className="site-nav-inner">
+          <a className="wordmark" href="/storyblox/">
+            <i />
+            StoryBlox
+          </a>
+          <nav className="site-nav-links">
+            <a href="/storyblox/">Home</a>
+            <a href="https://github.com/CapedBojji/storyblox">GitHub</a>
+          </nav>
+        </div>
+      </header>
+      <main>
       <section className="api-hero">
-        <a className="back-link" href="/storyblox/">
-          Back to StoryBlox
-        </a>
         <p className="eyebrow">API reference</p>
         <h1>StoryBlox API</h1>
         <p className="lede">
@@ -18,6 +31,7 @@ function ApiPage() {
       </section>
 
       <section className="api-section">
+        <div className="api-inner">
         <ApiGroup
           title="Story module"
           items={[
@@ -89,8 +103,10 @@ function ApiPage() {
             ["cleanup(ctx)", "Optional cleanup hook that runs after registered cleanup callbacks."],
           ]}
         />
+        </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }
 

@@ -1,6 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
+import "@fontsource/nunito-sans/400.css";
+import "@fontsource/nunito-sans/700.css";
+import "@fontsource/nunito-sans/800.css";
 import "./styles.css";
 
 const defaultStoryCode = `return {
@@ -97,102 +100,176 @@ export = story;`;
 
 function App() {
   return (
-    <main>
+    <>
+      <SiteNav />
+      <main>
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">Roblox UI story previews</p>
-          <h1>StoryBlox</h1>
+          <h1>Build Roblox UI stories. Preview them in a browser.</h1>
           <p className="lede">
-            Build Roblox UI stories in Luau or roblox-ts, preview them in a browser, and keep Rovy
-            app surfaces close to the code that owns them.
+            StoryBlox runs your Luau and roblox-ts stories through Zune and renders the result
+            next to the code that owns it — controls, Rovy surfaces and all.
           </p>
           <div className="hero-actions">
-            <a href="#start">Get started</a>
-            <a href="/storyblox/api/">API reference</a>
-            <a href="https://github.com/CapedBojji/storyblox">GitHub</a>
+            <a className="btn btn-primary" href="#start">
+              Get started
+            </a>
+            <a className="btn btn-quiet" href="/storyblox/api/">
+              API reference
+            </a>
+            <a className="btn btn-quiet" href="https://github.com/CapedBojji/storyblox">
+              GitHub
+            </a>
           </div>
         </div>
         <div className="preview-shell" aria-label="StoryBlox preview mockup">
-          <div className="preview-sidebar">
-            <span>RobloxUI</span>
-            <strong>Primary Button</strong>
-            <span>Rovy / Tool Window</span>
-            <span>Controls / Colors</span>
+          <div className="preview-titlebar">
+            <span className="traffic tinted">
+              <i />
+              <i />
+              <i />
+            </span>
+            <span>StoryBlox — RobloxUI</span>
           </div>
-          <div className="preview-canvas">
-            <div className="roblox-button">Click me</div>
-            <div className="knobs">
-              <span>text</span>
-              <span>accent</span>
-              <span>disabled</span>
+          <div className="preview-body">
+            <div className="preview-sidebar">
+              <span className="tree-label">RobloxUI</span>
+              <span className="tree-item active">
+                <i className="dot pink" />
+                Primary Button
+              </span>
+              <span className="tree-item">
+                <i className="dot teal" />
+                Tool Window
+              </span>
+              <span className="tree-item">
+                <i className="dot orange" />
+                Inventory Panel
+              </span>
+            </div>
+            <div className="preview-canvas">
+              <div className="roblox-button">Click me</div>
+              <div className="knobs">
+                <span>text</span>
+                <span>accent</span>
+                <span>disabled</span>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       <section className="demo-band">
-        <div className="section-heading">
-          <p className="eyebrow">Live demo</p>
-          <h2>Edit a Roblox story and see the preview update.</h2>
-          <p>
-            Change the single story below. Valid edits update the preview immediately; invalid edits
-            keep the last good preview and show the parser error.
-          </p>
+        <div className="band-inner">
+          <div className="section-heading">
+            <p className="eyebrow">Live demo</p>
+            <h2>Edit a Roblox story and see the preview update.</h2>
+            <p>
+              Change the story below. Valid edits update the preview immediately; invalid edits
+              keep the last good preview and show the parser error.
+            </p>
+          </div>
+          <StoryEditorDemo />
         </div>
-        <StoryEditorDemo />
       </section>
 
       <section id="start" className="band">
-        <div>
-          <p className="eyebrow">Install</p>
-          <h2>Run a local story browser.</h2>
-          <p>
-            StoryBlox discovers `.story.luau` modules, evaluates them through Zune, and serializes
-            the returned Roblox UI tree into a browser preview.
-          </p>
+        <div className="band-inner">
+          <div>
+            <p className="eyebrow">Install</p>
+            <h2>Run a local story browser.</h2>
+            <p>
+              StoryBlox discovers <code>.story.luau</code> modules, evaluates them through Zune,
+              and serializes the returned Roblox UI tree into a browser preview.
+            </p>
+          </div>
+          <CodeBlock code={`pnpm install\npnpm run dev\n\nstoryblox dev ./path/to/project`} />
         </div>
-        <CodeBlock code={`pnpm install\npnpm run dev\n\nstoryblox dev ./path/to/project`} />
       </section>
 
       <section className="split">
-        <Article
-          title="Adapter optional"
-          body="Plain stories can create Roblox instances directly. Use the adapter when you want compact tree creation and first-class controls."
-          code={plainStory}
-        />
-        <Article
-          title="Controls included"
-          body="The adapter helpers define typed control defaults for strings, booleans, sliders, colors, UDim, UDim2, selects, and objects."
-          code={adapterStory}
-        />
-      </section>
-
-      <section className="band rovy">
-        <div>
-          <p className="eyebrow">First-party Rovy</p>
-          <h2>Preview Rovy/Vide and Rovy UI without custom glue.</h2>
-          <p>
-            Use `rovyVide.story(...)` for view mounting through `@rovy/vide`, or `rovy.story(...)`
-            when you need app creation, runtime selection, roots, and cleanup in one place.
-          </p>
-        </div>
-        <div className="code-grid">
-          <CodeBlock title="Rovy/Vide" code={rovyVideStory} />
-          <CodeBlock title="Rovy UI" code={rovyUiStory} />
+        <div className="split-inner">
+          <Article
+            title="Adapter optional"
+            body="Plain stories can create Roblox instances directly. Use the adapter when you want compact tree creation and first-class controls."
+            code={plainStory}
+          />
+          <Article
+            title="Controls included"
+            body="The adapter helpers define typed control defaults for strings, booleans, sliders, colors, UDim, UDim2, selects, and objects."
+            code={adapterStory}
+          />
         </div>
       </section>
 
       <section className="band">
-        <div>
-          <p className="eyebrow">Reference</p>
-          <h2>Need the full surface area?</h2>
-          <p>The API reference now lives on its own page with story, adapter, control, config, and Rovy details.</p>
-        </div>
-        <div className="reference-link-panel">
-          <a href="/storyblox/api/">Open API reference</a>
+        <div className="band-inner">
+          <div>
+            <p className="eyebrow">First-party Rovy</p>
+            <h2>Preview Rovy/Vide and Rovy UI without custom glue.</h2>
+            <p>
+              Use <code>rovyVide.story(...)</code> for view mounting through{" "}
+              <code>@rovy/vide</code>, or <code>rovy.story(...)</code> when you need app creation,
+              runtime selection, roots, and cleanup in one place.
+            </p>
+          </div>
+          <div className="code-grid">
+            <CodeBlock title="Rovy/Vide" code={rovyVideStory} />
+            <CodeBlock title="Rovy UI" code={rovyUiStory} />
+          </div>
         </div>
       </section>
-    </main>
+
+      <section className="band">
+        <div className="band-inner">
+          <div>
+            <p className="eyebrow">Reference</p>
+            <h2>Need the full surface area?</h2>
+            <p>
+              The API reference lives on its own page with story, adapter, control, config, and
+              Rovy details.
+            </p>
+          </div>
+          <div className="reference-link-panel">
+            <a className="btn btn-primary" href="/storyblox/api/">
+              Open API reference
+            </a>
+          </div>
+        </div>
+      </section>
+      </main>
+      <SiteFooter />
+    </>
+  );
+}
+
+function SiteNav() {
+  return (
+    <header className="site-nav">
+      <div className="site-nav-inner">
+        <a className="wordmark" href="/storyblox/">
+          <i />
+          StoryBlox
+        </a>
+        <nav className="site-nav-links">
+          <a href="#start">Get started</a>
+          <a href="/storyblox/api/">API</a>
+          <a href="https://github.com/CapedBojji/storyblox">GitHub</a>
+        </nav>
+      </div>
+    </header>
+  );
+}
+
+function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <div className="site-footer-inner">
+        <span>StoryBlox — Roblox UI story previews</span>
+        <a href="https://github.com/CapedBojji/storyblox">GitHub</a>
+      </div>
+    </footer>
   );
 }
 
@@ -218,11 +295,49 @@ function StoryEditorDemo() {
     setError(null);
   }
 
+  function patchCode(pattern: RegExp, replacement: string) {
+    updateCode(code.replace(pattern, replacement));
+  }
+
+  function setText(value: string) {
+    patchCode(
+      /button\.Text\s*=\s*"[^"]*"/,
+      `button.Text = "${value.replace(/[\\"]/g, "")}"`,
+    );
+  }
+
+  function setBackground(hex: string) {
+    const [r, g, b] = hexToRgbChannels(hex);
+    patchCode(
+      /button\.BackgroundColor3\s*=\s*Color3\.fromRGB\([^)]*\)/,
+      `button.BackgroundColor3 = Color3.fromRGB(${r}, ${g}, ${b})`,
+    );
+  }
+
+  function setSize(width: number, height: number) {
+    patchCode(
+      /button\.Size\s*=\s*UDim2\.fromOffset\([^)]*\)/,
+      `button.Size = UDim2.fromOffset(${width}, ${height})`,
+    );
+  }
+
+  function setRadius(value: number) {
+    patchCode(
+      /corner\.CornerRadius\s*=\s*UDim\.new\(0\s*,\s*[-\d.]+\)/,
+      `corner.CornerRadius = UDim.new(0, ${value})`,
+    );
+  }
+
   return (
     <div className="editor-demo">
       <div className="editor-pane">
         <div className="editor-toolbar">
-          <span>PrimaryButton.story.luau</span>
+          <span className="traffic">
+            <i />
+            <i />
+            <i />
+          </span>
+          <span className="file-name">PrimaryButton.story.luau</span>
           <button type="button" onClick={resetCode}>
             Reset
           </button>
@@ -240,26 +355,97 @@ function StoryEditorDemo() {
       <div className="story-preview-pane">
         <div className="story-preview-header">
           <span>{preview.name}</span>
-          <span>{preview.width} x {preview.height}</span>
+          <span>
+            {preview.width} × {preview.height}
+          </span>
         </div>
         <div className="story-preview-stage">
-        <button
-          type="button"
-          className="demo-button"
-          style={{
-            width: preview.width,
-            minHeight: preview.height,
-            backgroundColor: preview.background,
-            borderRadius: preview.radius,
-            color: preview.textColor,
-          }}
+          <button
+            type="button"
+            className="demo-button"
+            style={{
+              width: preview.width,
+              minHeight: preview.height,
+              backgroundColor: preview.background,
+              borderRadius: preview.radius,
+              color: preview.textColor,
+            }}
+          >
+            {preview.text}
+          </button>
+        </div>
+        <fieldset
+          className="story-controls"
+          disabled={error !== null}
+          aria-label="Story controls"
         >
-          {preview.text}
-        </button>
-      </div>
+          <label className="control">
+            <span>text</span>
+            <input
+              type="text"
+              value={preview.text}
+              onChange={(event) => setText(event.target.value)}
+            />
+          </label>
+          <label className="control">
+            <span>color</span>
+            <input
+              type="color"
+              value={rgbToHex(preview.background)}
+              onChange={(event) => setBackground(event.target.value)}
+            />
+          </label>
+          <label className="control">
+            <span>width · {preview.width}px</span>
+            <input
+              type="range"
+              min={96}
+              max={360}
+              value={preview.width}
+              onChange={(event) => setSize(Number(event.target.value), preview.height)}
+            />
+          </label>
+          <label className="control">
+            <span>height · {preview.height}px</span>
+            <input
+              type="range"
+              min={36}
+              max={120}
+              value={preview.height}
+              onChange={(event) => setSize(preview.width, Number(event.target.value))}
+            />
+          </label>
+          <label className="control">
+            <span>radius · {preview.radius}px</span>
+            <input
+              type="range"
+              min={0}
+              max={28}
+              value={preview.radius}
+              onChange={(event) => setRadius(Number(event.target.value))}
+            />
+          </label>
+        </fieldset>
       </div>
     </div>
   );
+}
+
+function rgbToHex(rgb: string): string {
+  const match = rgb.match(/rgb\((\d+) (\d+) (\d+)\)/);
+  if (!match) return "#00aaff";
+  return `#${match
+    .slice(1, 4)
+    .map((channel) => Number(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function hexToRgbChannels(hex: string): [number, number, number] {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
 }
 
 function parseStory(source: string): DemoStory {
@@ -290,7 +476,7 @@ function parseStory(source: string): DemoStory {
 
 function readString(source: string, label: string, pattern: RegExp): string {
   const match = source.match(pattern);
-  if (!match?.[1]) throw new Error(`Missing ${label}.`);
+  if (match?.[1] === undefined) throw new Error(`Missing ${label}.`);
   return match[1];
 }
 
