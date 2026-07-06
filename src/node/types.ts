@@ -2,6 +2,7 @@ import type { ProjectManifest, RenderResponse, StoryManifest } from "../shared/t
 
 export interface UiClapsConfigInput {
   root: string;
+  storyRoot?: string;
   rojoProject: string;
   storyPatterns?: string[];
   storybookPatterns?: string[];
@@ -15,6 +16,7 @@ export interface ResolvedUiClapsConfig {
   projectRoot: string;
   configPath: string;
   root: string;
+  storyRoot: string;
   rojoProject: string;
   storyPatterns: string[];
   storybookPatterns: string[];

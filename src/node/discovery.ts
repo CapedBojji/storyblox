@@ -7,13 +7,13 @@ import type { ResolvedUiClapsConfig } from "./types.js";
 export async function discoverProject(config: ResolvedUiClapsConfig): Promise<ProjectManifest> {
   const [storyFiles, storybookFiles] = await Promise.all([
     fg(config.storyPatterns, {
-      cwd: config.root,
+      cwd: config.storyRoot,
       absolute: true,
       onlyFiles: true,
       unique: true,
     }),
     fg(config.storybookPatterns, {
-      cwd: config.root,
+      cwd: config.storyRoot,
       absolute: true,
       onlyFiles: true,
       unique: true,
@@ -29,7 +29,7 @@ export async function discoverProject(config: ResolvedUiClapsConfig): Promise<Pr
     .map((filePath) => createStoryManifest(config, filePath, storybooks));
 
   return {
-    root: config.root,
+    root: config.storyRoot,
     projectRoot: config.projectRoot,
     configPath: config.configPath,
     zuneCommand: config.zuneCommand,
@@ -44,7 +44,7 @@ export function createStoryManifest(
   filePath: string,
   storybooks: StorybookManifest[],
 ): StoryManifest {
-  const relativePath = normalizeSlash(relative(config.root, filePath));
+  const relativePath = normalizeSlash(relative(config.storyRoot, filePath));
   const group = findStorybookGroup(filePath, storybooks);
 
   return {
@@ -61,7 +61,7 @@ function createStorybookManifest(
   config: ResolvedUiClapsConfig,
   filePath: string,
 ): StorybookManifest {
-  const relativePath = normalizeSlash(relative(config.root, filePath));
+  const relativePath = normalizeSlash(relative(config.storyRoot, filePath));
 
   return {
     name: stripStorybookSuffix(relativePath.split("/").at(-1) ?? relativePath),

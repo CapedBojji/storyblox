@@ -9,11 +9,14 @@ return {
     accent = UI.control.color(Color3.fromRGB(0, 170, 255)),
   },
   render = function(props)
+    local function noop()
+    end
+
     return UI.create("Frame", {
       Size = UDim2.fromOffset(420, 260),
       BackgroundColor3 = Color3.fromRGB(18, 24, 32),
     }, {
-      UI.create("UICorner", { CornerRadius = UDim.new(0, 16) }),
+      UI.create("UICorner", { CornerRadius = UDim.new(0, 8) }),
       UI.create("UIPadding", {
         PaddingTop = UDim.new(0, 24),
         PaddingRight = UDim.new(0, 24),
@@ -29,6 +32,10 @@ return {
         TextColor3 = Color3.fromRGB(255, 255, 255),
         TextSize = 18,
         Active = not props.disabled,
+        MouseEnter = noop,
+        MouseLeave = noop,
+        MouseButton1Down = noop,
+        Activated = noop,
       }, {
         UI.create("UICorner", { CornerRadius = UDim.new(0, 8) }),
         UI.create("UIStroke", {
@@ -38,13 +45,14 @@ return {
         }),
       }),
       UI.create("TextLabel", {
-        Text = "Rendered through Zune into DOM/CSS",
+        Text = "The button declares Roblox GUI events for renderer inspection.",
         Size = UDim2.fromOffset(340, 28),
         Position = UDim2.fromOffset(0, 68),
         BackgroundTransparency = 1,
         TextColor3 = Color3.fromRGB(198, 210, 224),
         TextXAlignment = Enum.TextXAlignment.Left,
         TextSize = 15,
+        TextWrapped = true,
       }),
     })
   end,

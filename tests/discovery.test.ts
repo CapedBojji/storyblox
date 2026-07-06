@@ -25,4 +25,24 @@ describe("discovery", () => {
     expect(project.stories.find((story) => story.name === "Primary")?.group).toBe("Buttons");
     expect(project.stories.find((story) => story.name === "Loose")?.group).toBe("Unknown Stories");
   });
+
+  test("can discover compiled stories from a separate story root", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "ui-claps-discovery-"));
+    await mkdir(join(dir, "out", "client", "ui"), { recursive: true });
+    await writeFile(join(dir, "out", "client", "ui", "Hud.story.luau"), "return {}");
+
+    const config = normalizeConfig(
+      {
+        root: "src",
+        storyRoot: "out",
+        rojoProject: "default.project.json",
+      },
+      join(dir, "ui-claps.config.ts"),
+    );
+
+    const project = await discoverProject(config);
+    expect(project.root).toBe(join(dir, "out"));
+    expect(project.stories).toHaveLength(1);
+    expect(project.stories[0]?.relativePath).toBe("client/ui/Hud.story.luau");
+  });
 });

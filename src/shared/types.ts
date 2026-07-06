@@ -134,10 +134,16 @@ export interface RenderResponse {
   ok: boolean;
   tree?: RobloxVNode;
   warnings: string[];
+  output?: RenderOutputEntry[];
   error?: {
     message: string;
     stack?: string;
   };
+}
+
+export interface RenderOutputEntry {
+  level: "print" | "warn";
+  message: string;
 }
 
 export interface ApiErrorResponse {

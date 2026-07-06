@@ -96,12 +96,13 @@ async function expandDiskPath(
 
   const entries = await readdir(diskPath, { withFileTypes: true });
   const children: RojoNode[] = [];
-  let initFilePath: string | undefined;
+  let initFilePath: string | undefined = await readPackageMain(diskPath);
 
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     const entryPath = join(diskPath, entry.name);
+    const entryInfo = await stat(entryPath);
 
-    if (entry.isDirectory()) {
+    if (entryInfo.isDirectory()) {
       children.push(
         await buildDirectoryNode(
           entry.name,
@@ -112,7 +113,7 @@ async function expandDiskPath(
       continue;
     }
 
-    if (!entry.isFile() || !isLuauModule(entry.name)) continue;
+    if (!entryInfo.isFile() || !isLuauModule(entry.name)) continue;
 
     if (isInitModule(entry.name)) {
       initFilePath = entryPath;
@@ -138,6 +139,23 @@ async function expandDiskPath(
   return expanded;
 }
 
+async function readPackageMain(diskPath: string): Promise<string | undefined> {
+  try {
+    const packageJsonPath = join(diskPath, "package.json");
+    const raw = await readFile(packageJsonPath, "utf8");
+    const parsed = JSON.parse(raw) as { main?: unknown };
+    if (typeof parsed.main !== "string" || !isLuauModule(parsed.main)) {
+      return undefined;
+    }
+
+    const mainPath = join(diskPath, parsed.main);
+    const mainInfo = await stat(mainPath);
+    return mainInfo.isFile() ? mainPath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function buildDirectoryNode(
   directoryName: string,
   diskPath: string,
@@ -160,7 +178,7 @@ async function buildDirectoryNode(
 }
 
 function collectModules(node: RojoNode, target: Record<string, string>): void {
-  if (node.filePath) {
+  if (node.filePath && target[node.filePath] === undefined) {
     target[node.filePath] = node.instancePath;
   }
 

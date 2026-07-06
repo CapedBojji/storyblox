@@ -12,6 +12,7 @@ local nodeByFile = {}
 local proxyByNode = {}
 local syntheticServices = {}
 local syntheticOrder = 0
+local outputLogs = {}
 
 local CLASS_NAMES = {
   BillboardGui = true,
@@ -854,6 +855,26 @@ local function makeEnv(modulePath)
   env.typeof = uiClapsTypeof
   env.task = previewTask
   env.vector = previewVector
+  env.print = function(...)
+    local parts = {}
+    for index = 1, select("#", ...) do
+      table.insert(parts, tostring(select(index, ...)))
+    end
+    table.insert(outputLogs, {
+      level = "print",
+      message = table.concat(parts, "\t"),
+    })
+  end
+  env.warn = function(...)
+    local parts = {}
+    for index = 1, select("#", ...) do
+      table.insert(parts, tostring(select(index, ...)))
+    end
+    table.insert(outputLogs, {
+      level = "warn",
+      message = table.concat(parts, "\t"),
+    })
+  end
   env.newproxy = _G.newproxy or function()
     return setmetatable({}, {})
   end
@@ -1363,6 +1384,7 @@ local ok, response = xpcall(function()
         controls = serialize(story.controls or {}),
       },
       warnings = {},
+      output = outputLogs,
     }
   end
 
@@ -1384,6 +1406,7 @@ local ok, response = xpcall(function()
       ok = true,
       tree = serialize(tree),
       warnings = {},
+      output = outputLogs,
     }
   end
 
@@ -1396,6 +1419,7 @@ else
   writeResponse({
     ok = false,
     warnings = {},
+    output = outputLogs,
     error = {
       message = tostring(response),
       stack = tostring(response),

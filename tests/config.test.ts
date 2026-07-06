@@ -18,10 +18,25 @@ describe("config", () => {
     );
 
     expect(config.root).toBe("/workspace/src");
+    expect(config.storyRoot).toBe("/workspace/src");
     expect(config.rojoProject).toBe("/workspace/default.project.json");
     expect(config.aliases["@pkg"]).toBe("/workspace/Packages");
     expect(config.zuneCommand).toBe("zune");
     expect(config.port).toBe(4500);
+  });
+
+  test("normalizes a separate story root", () => {
+    const config = normalizeConfig(
+      {
+        root: "src",
+        storyRoot: "out",
+        rojoProject: "default.project.json",
+      },
+      "/workspace/ui-claps.config.ts",
+    );
+
+    expect(config.root).toBe("/workspace/src");
+    expect(config.storyRoot).toBe("/workspace/out");
   });
 
   test("errors with a helpful missing config message", async () => {

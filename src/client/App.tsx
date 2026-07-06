@@ -5,8 +5,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
-  Eye,
+  ChevronUp,
   FileText,
   Folder,
   Grid3x3,
@@ -14,18 +13,15 @@ import {
   Link,
   Maximize,
   Minimize,
-  Monitor,
   Moon,
-  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   RotateCcw,
   RotateCw,
-  Ruler,
   Scan,
   Search,
-  Smartphone,
+  Terminal,
   Sun,
   TriangleAlert,
   ZoomIn,
@@ -49,57 +45,8 @@ import { buildStoryTree, findStoryNodePath, type StoryTreeNode } from "./storyTr
 
 type ControlValues = Record<string, JsonValue>;
 
-type Theme = "system" | "light" | "dark";
-type AddonTab = "controls" | "warnings";
-type CanvasBackground = "light" | "dark" | "checkerboard";
-
-const CANVAS_BG_ORDER: Record<CanvasBackground, CanvasBackground> = {
-  light: "dark",
-  dark: "checkerboard",
-  checkerboard: "light",
-};
-
-const CANVAS_BG_LABEL: Record<CanvasBackground, string> = {
-  light: "Light",
-  dark: "Dark",
-  checkerboard: "Checkerboard",
-};
-
-type VisionFilter = "none" | "blur" | "grayscale" | "deuteranopia" | "protanopia" | "tritanopia";
-
-const VISION_ORDER: Record<VisionFilter, VisionFilter> = {
-  none: "blur",
-  blur: "grayscale",
-  grayscale: "deuteranopia",
-  deuteranopia: "protanopia",
-  protanopia: "tritanopia",
-  tritanopia: "none",
-};
-
-const VISION_LABEL: Record<VisionFilter, string> = {
-  none: "None",
-  blur: "Blurred",
-  grayscale: "Grayscale",
-  deuteranopia: "Deuteranopia",
-  protanopia: "Protanopia",
-  tritanopia: "Tritanopia",
-};
-
-const VIEWPORT_PRESETS = [
-  { id: "responsive", label: "Responsive", width: 0, height: 0 },
-  { id: "hd", label: "1920 × 1080", width: 1920, height: 1080 },
-  { id: "laptop", label: "1280 × 720", width: 1280, height: 720 },
-  { id: "tablet", label: "1024 × 768", width: 1024, height: 768 },
-  { id: "phone", label: "812 × 375", width: 812, height: 375 },
-] as const;
-
-interface MeasureBox {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  label: string;
-}
+type Theme = "light" | "dark";
+type AddonTab = "controls" | "warnings" | "output";
 
 function initialUrlParams(): URLSearchParams {
   try {
@@ -112,35 +59,33 @@ function initialUrlParams(): URLSearchParams {
 const THEME_KEY = "ui-claps-theme";
 const SIDEBAR_KEY = "ui-claps-sidebar-collapsed";
 const EXPANDED_NODES_KEY = "ui-claps-expanded-story-nodes";
+const ADDON_HEIGHT_KEY = "ui-claps-addon-height";
+const ADDON_COLLAPSED_KEY = "ui-claps-addon-collapsed";
+const MIN_ADDON_HEIGHT = 160;
+const MAX_ADDON_HEIGHT = 560;
 
 const THEME_ORDER: Record<Theme, Theme> = {
-  system: "light",
   light: "dark",
-  dark: "system",
+  dark: "light",
 };
 
 const THEME_META: Record<Theme, { icon: LucideIcon; label: string }> = {
-  system: { icon: Monitor, label: "System" },
   light: { icon: Sun, label: "Light" },
   dark: { icon: Moon, label: "Dark" },
 };
 
-function systemTheme(): "light" | "dark" {
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
 function readStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_KEY);
-    if (stored === "light" || stored === "dark" || stored === "system") return stored;
+    if (stored === "light" || stored === "dark") return stored;
   } catch {
     /* ignore */
   }
-  return "system";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function applyTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme === "system" ? systemTheme() : theme;
+  document.documentElement.dataset.theme = theme;
 }
 
 function readStoredSidebarCollapsed(): boolean {
@@ -161,6 +106,24 @@ function readStoredExpandedNodes(): Set<string> {
   }
 }
 
+function readStoredAddonHeight(): number {
+  try {
+    const stored = Number(localStorage.getItem(ADDON_HEIGHT_KEY));
+    if (Number.isFinite(stored)) return clampNumber(stored, MIN_ADDON_HEIGHT, MAX_ADDON_HEIGHT);
+  } catch {
+    /* ignore */
+  }
+  return 280;
+}
+
+function readStoredAddonCollapsed(): boolean {
+  try {
+    return localStorage.getItem(ADDON_COLLAPSED_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function App(): ReactElement {
   const [project, setProject] = useState<ProjectManifest | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -177,14 +140,13 @@ export function App(): ReactElement {
   const [searchQuery, setSearchQuery] = useState("");
   const [addonTab, setAddonTab] = useState<AddonTab>("controls");
   const [zoom, setZoom] = useState(1);
-  const [canvasBg, setCanvasBg] = useState<CanvasBackground>("light");
   const [fullscreen, setFullscreen] = useState(() => initialUrlParams().get("full") === "1");
   const [gridOn, setGridOn] = useState(false);
   const [outlineOn, setOutlineOn] = useState(false);
-  const [measureOn, setMeasureOn] = useState(false);
-  const [measureBox, setMeasureBox] = useState<MeasureBox | null>(null);
-  const [vision, setVision] = useState<VisionFilter>("none");
-  const [viewportIndex, setViewportIndex] = useState(0);
+  const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  const [addonHeight, setAddonHeight] = useState(readStoredAddonHeight);
+  const [addonCollapsed, setAddonCollapsed] = useState(readStoredAddonCollapsed);
   const [linkCopied, setLinkCopied] = useState(false);
   const [hotReloadVersion, setHotReloadVersion] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -237,11 +199,6 @@ export function App(): ReactElement {
     } catch {
       /* ignore */
     }
-    if (theme !== "system") return;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = (): void => applyTheme("system");
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
   }, [theme]);
 
   useEffect(() => {
@@ -259,6 +216,22 @@ export function App(): ReactElement {
       /* ignore */
     }
   }, [expandedNodeIds]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADDON_HEIGHT_KEY, String(addonHeight));
+    } catch {
+      /* ignore */
+    }
+  }, [addonHeight]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADDON_COLLAPSED_KEY, String(addonCollapsed));
+    } catch {
+      /* ignore */
+    }
+  }, [addonCollapsed]);
 
   const selectedStory = useMemo(
     () => project?.stories.find((story) => story.id === selectedId) ?? project?.stories[0] ?? null,
@@ -366,27 +339,21 @@ export function App(): ReactElement {
   const addonCounts: Record<AddonTab, number> = {
     controls: controlEntries.length,
     warnings: combinedWarnings.length,
+    output: rendered?.output?.length ?? 0,
   };
+  const outputEntries = rendered?.output ?? [];
 
-  const viewportPreset = VIEWPORT_PRESETS[viewportIndex] ?? VIEWPORT_PRESETS[0];
   const stageStyle: CSSProperties = {};
   if (zoom !== 1) stageStyle.transform = `scale(${zoom})`;
-  if (viewportPreset.width > 0) {
-    stageStyle.width = viewportPreset.width;
-    stageStyle.height = viewportPreset.height;
-  }
   const stageClassName = [
     "preview-zoom",
     outlineOn ? "outlines" : "",
-    viewportPreset.width > 0 ? "viewport-fixed" : "",
   ]
     .filter(Boolean)
     .join(" ");
   const bandClassName = [
     "preview-band",
-    `bg-${canvasBg}`,
     gridOn ? "grid-on" : "",
-    vision !== "none" ? `vision-${vision}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -405,12 +372,27 @@ export function App(): ReactElement {
     );
   }
 
-  function handleOpenCanvasTab(): void {
-    if (!selectedStory) return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("story", selectedStory.id);
-    url.searchParams.set("full", "1");
-    window.open(url.toString(), "_blank", "noopener");
+  function handleAddonResize(event: ReactPointerEvent<HTMLDivElement>): void {
+    event.preventDefault();
+    setAddonCollapsed(false);
+
+    const startY = event.clientY;
+    const startHeight = addonHeight;
+    const ownerDocument = event.currentTarget.ownerDocument;
+
+    const move = (nativeEvent: globalThis.PointerEvent): void => {
+      const nextHeight = startHeight + startY - nativeEvent.clientY;
+      setAddonHeight(clampNumber(nextHeight, MIN_ADDON_HEIGHT, MAX_ADDON_HEIGHT));
+    };
+    const end = (): void => {
+      ownerDocument.removeEventListener("pointermove", move);
+      ownerDocument.removeEventListener("pointerup", end);
+      ownerDocument.removeEventListener("pointercancel", end);
+    };
+
+    ownerDocument.addEventListener("pointermove", move);
+    ownerDocument.addEventListener("pointerup", end);
+    ownerDocument.addEventListener("pointercancel", end);
   }
 
   function toggleNode(nodeId: string): void {
@@ -432,6 +414,9 @@ export function App(): ReactElement {
   ]
     .filter(Boolean)
     .join(" ");
+  const workspaceStyle = {
+    "--addon-h": addonCollapsed ? "40px" : `${addonHeight}px`,
+  } as CSSProperties;
 
   return (
     <div className={shellClassName}>
@@ -513,7 +498,7 @@ export function App(): ReactElement {
         </nav>
       </aside>
 
-      <main className="workspace">
+      <main className="workspace" style={workspaceStyle}>
         <header className="topbar">
           <div className="topbar-tools">
             <div className="toolbar-group" role="group" aria-label="Story canvas">
@@ -557,16 +542,7 @@ export function App(): ReactElement {
               {zoom !== 1 ? <span className="tool-label">{Math.round(zoom * 100)}%</span> : null}
             </div>
             <span className="toolbar-divider" aria-hidden="true" />
-            <div className="toolbar-group" role="group" aria-label="Canvas appearance">
-              <button
-                className="icon-button"
-                type="button"
-                onClick={() => setCanvasBg((current) => CANVAS_BG_ORDER[current])}
-                title={`Canvas background: ${CANVAS_BG_LABEL[canvasBg]} (click to switch)`}
-                aria-label={`Canvas background: ${CANVAS_BG_LABEL[canvasBg]}. Click to switch.`}
-              >
-                <Palette size={14} strokeWidth={2} aria-hidden="true" />
-              </button>
+            <div className="toolbar-group" role="group" aria-label="Canvas helpers">
               <button
                 className={gridOn ? "icon-button on" : "icon-button"}
                 type="button"
@@ -578,36 +554,6 @@ export function App(): ReactElement {
                 <Grid3x3 size={14} strokeWidth={2} aria-hidden="true" />
               </button>
               <button
-                className={viewportPreset.width > 0 ? "icon-button on" : "icon-button"}
-                type="button"
-                onClick={() => setViewportIndex((current) => (current + 1) % VIEWPORT_PRESETS.length)}
-                title={`Viewport: ${viewportPreset.label} (click to switch)`}
-                aria-label={`Viewport: ${viewportPreset.label}. Click to switch.`}
-              >
-                <Smartphone size={14} strokeWidth={2} aria-hidden="true" />
-              </button>
-              {viewportPreset.width > 0 ? (
-                <span className="tool-label">{viewportPreset.label}</span>
-              ) : null}
-            </div>
-            <span className="toolbar-divider" aria-hidden="true" />
-            <div className="toolbar-group" role="group" aria-label="Inspection">
-              <button
-                className={measureOn ? "icon-button on" : "icon-button"}
-                type="button"
-                aria-pressed={measureOn}
-                onClick={() =>
-                  setMeasureOn((current) => {
-                    if (current) setMeasureBox(null);
-                    return !current;
-                  })
-                }
-                title="Measure elements on hover"
-                aria-label="Measure elements on hover"
-              >
-                <Ruler size={14} strokeWidth={2} aria-hidden="true" />
-              </button>
-              <button
                 className={outlineOn ? "icon-button on" : "icon-button"}
                 type="button"
                 aria-pressed={outlineOn}
@@ -617,16 +563,6 @@ export function App(): ReactElement {
               >
                 <Scan size={14} strokeWidth={2} aria-hidden="true" />
               </button>
-              <button
-                className={vision !== "none" ? "icon-button on" : "icon-button"}
-                type="button"
-                onClick={() => setVision((current) => VISION_ORDER[current])}
-                title={`Vision simulator: ${VISION_LABEL[vision]} (click to switch)`}
-                aria-label={`Vision simulator: ${VISION_LABEL[vision]}. Click to switch.`}
-              >
-                <Eye size={14} strokeWidth={2} aria-hidden="true" />
-              </button>
-              {vision !== "none" ? <span className="tool-label">{VISION_LABEL[vision]}</span> : null}
             </div>
           </div>
           <div className="topbar-actions">
@@ -640,8 +576,8 @@ export function App(): ReactElement {
               className="icon-button"
               type="button"
               onClick={() => setTheme((current) => THEME_ORDER[current])}
-              title={`Theme: ${THEME_META[theme].label} (click to switch)`}
-              aria-label={`Theme: ${THEME_META[theme].label}. Click to switch.`}
+              title={`Switch to ${THEME_META[THEME_ORDER[theme]].label} theme`}
+              aria-label={`Switch to ${THEME_META[THEME_ORDER[theme]].label} theme`}
             >
               <ThemeIcon size={15} strokeWidth={2} aria-hidden="true" />
             </button>
@@ -650,8 +586,8 @@ export function App(): ReactElement {
               className="icon-button"
               type="button"
               onClick={() => setFullscreen((current) => !current)}
-              title={fullscreen ? "Exit fullscreen" : "Go fullscreen"}
-              aria-label={fullscreen ? "Exit fullscreen" : "Go fullscreen"}
+              title={fullscreen ? "Exit canvas focus" : "Focus canvas"}
+              aria-label={fullscreen ? "Exit canvas focus" : "Focus canvas"}
             >
               {fullscreen ? (
                 <Minimize size={14} strokeWidth={2} aria-hidden="true" />
@@ -660,56 +596,34 @@ export function App(): ReactElement {
               )}
             </button>
             <button
-              className="icon-button"
-              type="button"
-              onClick={handleOpenCanvasTab}
-              title="Open canvas in new tab"
-              aria-label="Open canvas in new tab"
-            >
-              <ExternalLink size={14} strokeWidth={2} aria-hidden="true" />
-            </button>
-            <button
-              className="icon-button"
+              className={linkCopied ? "icon-button text-button copied" : "icon-button text-button"}
               type="button"
               onClick={handleCopyLink}
-              title={linkCopied ? "Link copied" : "Copy canvas link"}
-              aria-label={linkCopied ? "Link copied" : "Copy canvas link"}
+              title={linkCopied ? "Story link copied" : "Copy story link"}
+              aria-label={linkCopied ? "Story link copied" : "Copy story link"}
             >
               {linkCopied ? (
                 <Check size={14} strokeWidth={2} aria-hidden="true" />
               ) : (
                 <Link size={14} strokeWidth={2} aria-hidden="true" />
               )}
+              <span>{linkCopied ? "Copied" : "Share"}</span>
             </button>
           </div>
         </header>
 
-        <section
-          className={bandClassName}
-          onPointerMove={
-            measureOn
-              ? (event) => {
-                  const target =
-                    event.target instanceof Element ? event.target.closest(".roblox-node") : null;
-                  if (!(target instanceof HTMLElement)) {
-                    setMeasureBox(null);
-                    return;
-                  }
-                  const rect = target.getBoundingClientRect();
-                  setMeasureBox({
-                    left: rect.left,
-                    top: rect.top,
-                    width: rect.width,
-                    height: rect.height,
-                    label: `${Math.round(target.offsetWidth)} × ${Math.round(target.offsetHeight)}`,
-                  });
-                }
-              : undefined
-          }
-          onPointerLeave={measureOn ? () => setMeasureBox(null) : undefined}
-        >
+        <section className={bandClassName}>
           <div className={stageClassName} style={stageStyle}>
-            {rendered?.tree ? <RobloxRenderer node={rendered.tree} isRoot /> : null}
+            {rendered?.tree ? (
+              <RobloxRenderer
+                node={rendered.tree}
+                isRoot
+                selectedPath={selectedPath}
+                hoveredPath={hoveredPath}
+                onSelectPath={setSelectedPath}
+                onHoverPath={setHoveredPath}
+              />
+            ) : null}
           </div>
           {rendered?.error ? (
             <div className="preview-message error-message">{rendered.error.message}</div>
@@ -720,62 +634,55 @@ export function App(): ReactElement {
           {error ? <div className="preview-message error-message">{error}</div> : null}
         </section>
 
-        {measureOn && measureBox ? (
+        <section
+          className={addonCollapsed ? "addon-panel collapsed" : "addon-panel"}
+          aria-label="Story addons"
+        >
           <div
-            className="measure-box"
-            style={{
-              left: measureBox.left,
-              top: measureBox.top,
-              width: measureBox.width,
-              height: measureBox.height,
-            }}
-            aria-hidden="true"
-          >
-            <span className="measure-tag">{measureBox.label}</span>
-          </div>
-        ) : null}
-
-        <svg className="vision-defs" aria-hidden="true" focusable="false">
-          <filter id="vision-protanopia">
-            <feColorMatrix
-              type="matrix"
-              values="0.567 0.433 0 0 0  0.558 0.442 0 0 0  0 0.242 0.758 0 0  0 0 0 1 0"
-            />
-          </filter>
-          <filter id="vision-deuteranopia">
-            <feColorMatrix
-              type="matrix"
-              values="0.625 0.375 0 0 0  0.7 0.3 0 0 0  0 0.3 0.7 0 0  0 0 0 1 0"
-            />
-          </filter>
-          <filter id="vision-tritanopia">
-            <feColorMatrix
-              type="matrix"
-              values="0.95 0.05 0 0 0  0 0.433 0.567 0 0  0 0.475 0.525 0 0  0 0 0 1 0"
-            />
-          </filter>
-        </svg>
-
-        <section className="addon-panel" aria-label="Story addons">
-          <header className="addon-tabs" role="tablist" aria-label="Story addon panels">
-            {(["controls", "warnings"] as const).map((tab) => (
-              <button
-                aria-controls={`addon-${tab}`}
-                aria-selected={addonTab === tab}
-                className={addonTab === tab ? "addon-tab active" : "addon-tab"}
-                id={`addon-tab-${tab}`}
-                key={tab}
-                onClick={() => setAddonTab(tab)}
-                role="tab"
-                type="button"
-              >
-                {tab === "controls" ? "Controls" : "Warnings"}
-                <span className="controls-count">{addonCounts[tab]}</span>
-              </button>
-            ))}
+            className="addon-resize-handle"
+            onPointerDown={handleAddonResize}
+            role="separator"
+            aria-label="Resize addon panel"
+            aria-orientation="horizontal"
+          />
+          <header className="addon-header">
+            <div className="addon-tabs" role="tablist" aria-label="Story addon panels">
+              {(["controls", "warnings", "output"] as const).map((tab) => (
+                <button
+                  aria-controls={`addon-${tab}`}
+                  aria-selected={addonTab === tab}
+                  className={addonTab === tab ? "addon-tab active" : "addon-tab"}
+                  id={`addon-tab-${tab}`}
+                  key={tab}
+                  onClick={() => {
+                    setAddonTab(tab);
+                    setAddonCollapsed(false);
+                  }}
+                  role="tab"
+                  type="button"
+                >
+                  {tab === "controls" ? "Controls" : tab === "warnings" ? "Warnings" : "Output"}
+                  <span className="controls-count">{addonCounts[tab]}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setAddonCollapsed((current) => !current)}
+              title={addonCollapsed ? "Expand addon panel" : "Collapse addon panel"}
+              aria-label={addonCollapsed ? "Expand addon panel" : "Collapse addon panel"}
+              aria-expanded={!addonCollapsed}
+            >
+              {addonCollapsed ? (
+                <ChevronUp size={14} strokeWidth={2} aria-hidden="true" />
+              ) : (
+                <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
+              )}
+            </button>
           </header>
 
-          {addonTab === "controls" ? (
+          {!addonCollapsed && addonTab === "controls" ? (
             <div
               aria-labelledby="addon-tab-controls"
               className="addon-body controls-body"
@@ -825,7 +732,9 @@ export function App(): ReactElement {
                 </div>
               )}
             </div>
-          ) : (
+          ) : null}
+
+          {!addonCollapsed && addonTab === "warnings" ? (
             <div
               aria-labelledby="addon-tab-warnings"
               className="addon-body warnings-section"
@@ -849,7 +758,30 @@ export function App(): ReactElement {
                 </>
               )}
             </div>
-          )}
+          ) : null}
+
+          {!addonCollapsed && addonTab === "output" ? (
+            <div
+              aria-labelledby="addon-tab-output"
+              className="addon-body output-section"
+              id="addon-output"
+              role="tabpanel"
+            >
+              {outputEntries.length === 0 ? (
+                <div className="empty-state">No story output yet.</div>
+              ) : (
+                <ul className="output-list">
+                  {outputEntries.map((entry, index) => (
+                    <li className={`output-line ${entry.level}`} key={`${entry.level}-${index}`}>
+                      <Terminal size={13} strokeWidth={2} aria-hidden="true" />
+                      <span className="output-level">{entry.level}</span>
+                      <span className="output-message">{entry.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
         </section>
       </main>
     </div>

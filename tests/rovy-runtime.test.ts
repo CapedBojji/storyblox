@@ -13,6 +13,32 @@ import type { ResolvedUiClapsConfig } from "../src/node/types.js";
 const zunePath = execFileSync("mise", ["which", "zune"], { encoding: "utf8" }).trim();
 
 describe("rovy runtime stories", () => {
+  test("captures story print and warn output", async () => {
+    const project = await createRovyFixture({
+      story: `
+local UI = require("@ui-claps/adapter")
+
+return {
+  name = "Output Logs",
+  render = function()
+    print("a", "b")
+    warn("careful")
+    return UI.create("TextLabel", {
+      Text = "Logged",
+    })
+  end,
+}
+`,
+    });
+
+    const response = await renderFixture(project);
+    expect(response.ok).toBe(true);
+    expect(response.output).toEqual([
+      { level: "print", message: "a\tb" },
+      { level: "warn", message: "careful" },
+    ]);
+  });
+
   test("renders a vide runtime story without extra setup", async () => {
     const project = await createRovyFixture({
       story: `

@@ -1,12 +1,12 @@
 {
-  "name": "ui-claps",
+  "name": "storyblox",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "A web story renderer for Roblox UI powered by Zune and DOM/CSS.",
   "packageManager": "pnpm@11.8.0",
   "bin": {
-    "ui-claps": "./dist/node/cli.js"
+    "storyblox": "./dist/node/cli.js"
   },
   "exports": {
     ".": {

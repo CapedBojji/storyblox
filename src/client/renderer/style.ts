@@ -9,6 +9,27 @@ import type {
 } from "../../shared/types";
 import type { CSSProperties } from "react";
 
+export const ROOT_INSTANCE_PATH = "0";
+
+/* Modifier instances configure their parent (corner, stroke, layout, ...) and
+   are never rendered as DOM nodes themselves. */
+export const MODIFIER_CLASSES = new Set([
+  "UICorner",
+  "UIStroke",
+  "UIPadding",
+  "UIListLayout",
+  "UIGridLayout",
+  "UIPageLayout",
+  "UITableLayout",
+  "UIGradient",
+  "UIAspectRatioConstraint",
+  "UISizeConstraint",
+  "UITextSizeConstraint",
+  "UIScale",
+  "UIFlexItem",
+  "UIDragDetector",
+]);
+
 export interface RobloxModifiers {
   cornerRadius?: string;
   stroke?: {
@@ -27,22 +48,74 @@ export interface RobloxModifiers {
     gap: string;
     horizontal: string;
     vertical: string;
+    horizontalFlex?: string | undefined;
+    verticalFlex?: string | undefined;
+    itemLineAlignment?: string | undefined;
+    wraps: boolean;
+  };
+  gridLayout?: {
+    cellWidth: string;
+    cellHeight: string;
+    gapX: string;
+    gapY: string;
+    horizontal: string;
+    vertical: string;
+    maxCells?: number | undefined;
+  };
+  tableLayout?: {
+    gapX: string;
+    gapY: string;
+    horizontal: string;
+    vertical: string;
+  };
+  pageLayout?: {
+    direction: "row" | "column";
+    gap: string;
+    horizontal: string;
+    vertical: string;
   };
   gradient?: string;
   aspectRatio?: number;
+  sizeConstraint?: {
+    minWidth?: number | undefined;
+    minHeight?: number | undefined;
+    maxWidth?: number | undefined;
+    maxHeight?: number | undefined;
+  };
+  textSizeConstraint?: {
+    min?: number | undefined;
+    max?: number | undefined;
+  };
+  scale?: number;
+  flexItem?: {
+    mode?: string | undefined;
+    growRatio: number;
+    shrinkRatio: number;
+    itemLineAlignment?: string | undefined;
+  };
 }
 
 const VISUAL_DEFAULT_SIZE = "100%";
+const ROBLOX_DEFAULT_BACKGROUND = { r: 163, g: 162, b: 165 };
+const ROBLOX_DEFAULT_BORDER = "rgb(27, 42, 53)";
+const ROBLOX_DEFAULT_TEXT = "rgb(27, 42, 53)";
+const ROBLOX_FONT_STACK = "Arial, Helvetica, sans-serif";
 
 export function collectModifiers(children: RobloxVNode[]): RobloxModifiers {
   const modifiers: RobloxModifiers = {};
 
   for (const child of children) {
     if (child.className === "UICorner") {
-      modifiers.cornerRadius = udimToCss(child.props.CornerRadius, "0px");
+      const radius = child.props.CornerRadius;
+      modifiers.cornerRadius = [
+        udimToCss(child.props.TopLeftRadius ?? radius, "0px"),
+        udimToCss(child.props.TopRightRadius ?? radius, "0px"),
+        udimToCss(child.props.BottomRightRadius ?? radius, "0px"),
+        udimToCss(child.props.BottomLeftRadius ?? radius, "0px"),
+      ].join(" ");
     }
 
-    if (child.className === "UIStroke") {
+    if (child.className === "UIStroke" && child.props.Enabled !== false) {
       modifiers.stroke = {
         color: colorToCss(child.props.Color, "#000000"),
         thickness: numeric(child.props.Thickness, 1),
@@ -65,16 +138,89 @@ export function collectModifiers(children: RobloxVNode[]): RobloxModifiers {
         gap: udimToCss(child.props.Padding, "0px"),
         horizontal: enumName(child.props.HorizontalAlignment) ?? "Left",
         vertical: enumName(child.props.VerticalAlignment) ?? "Top",
+        horizontalFlex: enumName(child.props.HorizontalFlex),
+        verticalFlex: enumName(child.props.VerticalFlex),
+        itemLineAlignment: enumName(child.props.ItemLineAlignment),
+        wraps: child.props.Wraps === true,
       };
     }
 
-    if (child.className === "UIGradient") {
-      const color = colorSequenceToCss(child.props.Color);
+    if (child.className === "UIGridLayout") {
+      const cellSize = toUDim2(child.props.CellSize);
+      const cellPadding = toUDim2(child.props.CellPadding);
+      modifiers.gridLayout = {
+        cellWidth: cellSize ? udimToCss(cellSize.x, "100px") : "100px",
+        cellHeight: cellSize ? udimToCss(cellSize.y, "100px") : "100px",
+        gapX: cellPadding ? udimToCss(cellPadding.x, "0px") : "0px",
+        gapY: cellPadding ? udimToCss(cellPadding.y, "0px") : "0px",
+        horizontal: enumName(child.props.HorizontalAlignment) ?? "Left",
+        vertical: enumName(child.props.VerticalAlignment) ?? "Top",
+        maxCells:
+          typeof child.props.FillDirectionMaxCells === "number"
+            ? child.props.FillDirectionMaxCells
+            : undefined,
+      };
+    }
+
+    if (child.className === "UITableLayout") {
+      const padding = toUDim2(child.props.Padding);
+      modifiers.tableLayout = {
+        gapX: padding ? udimToCss(padding.x, "0px") : "0px",
+        gapY: padding ? udimToCss(padding.y, "0px") : "0px",
+        horizontal: enumName(child.props.HorizontalAlignment) ?? "Left",
+        vertical: enumName(child.props.VerticalAlignment) ?? "Top",
+      };
+    }
+
+    if (child.className === "UIPageLayout") {
+      modifiers.pageLayout = {
+        direction: enumName(child.props.FillDirection) === "Vertical" ? "column" : "row",
+        gap: udimToCss(child.props.Padding, "0px"),
+        horizontal: enumName(child.props.HorizontalAlignment) ?? "Left",
+        vertical: enumName(child.props.VerticalAlignment) ?? "Top",
+      };
+    }
+
+    if (child.className === "UIGradient" && child.props.Enabled !== false) {
+      const color = colorSequenceToCss(child.props.Color, numeric(child.props.Rotation, 0));
       if (color) modifiers.gradient = color;
     }
 
     if (child.className === "UIAspectRatioConstraint") {
       modifiers.aspectRatio = numeric(child.props.AspectRatio, 1);
+    }
+
+    if (child.className === "UISizeConstraint") {
+      const min = toVector2(child.props.MinSize);
+      const max = toVector2(child.props.MaxSize);
+      modifiers.sizeConstraint = {
+        minWidth: min?.x,
+        minHeight: min?.y,
+        maxWidth: max?.x,
+        maxHeight: max?.y,
+      };
+    }
+
+    if (child.className === "UITextSizeConstraint") {
+      modifiers.textSizeConstraint = {
+        min:
+          typeof child.props.MinTextSize === "number" ? child.props.MinTextSize : undefined,
+        max:
+          typeof child.props.MaxTextSize === "number" ? child.props.MaxTextSize : undefined,
+      };
+    }
+
+    if (child.className === "UIScale") {
+      modifiers.scale = numeric(child.props.Scale, 1);
+    }
+
+    if (child.className === "UIFlexItem") {
+      modifiers.flexItem = {
+        mode: enumName(child.props.FlexMode),
+        growRatio: numeric(child.props.GrowRatio, 0),
+        shrinkRatio: numeric(child.props.ShrinkRatio, 1),
+        itemLineAlignment: enumName(child.props.ItemLineAlignment),
+      };
     }
   }
 
@@ -92,12 +238,15 @@ export function createNodeStyle(
   const position = toUDim2(props.Position);
   const anchor = toVector2(props.AnchorPoint);
   const transparency = numeric(props.BackgroundTransparency, 0);
-  const borderSize = numeric(props.BorderSizePixel, 0);
+  const borderSize = numeric(props.BorderSizePixel, defaultBorderSize(node.className));
+  const groupTransparency =
+    node.className === "CanvasGroup" ? numeric(props.GroupTransparency, 0) : 0;
+  const transforms: string[] = [];
   const style: CSSProperties = {
     boxSizing: "border-box",
     overflow: node.className === "ScrollingFrame" ? "auto" : "hidden",
     zIndex: numeric(props.ZIndex, 1),
-    opacity: numeric(props.Visible, true) === false ? 0 : 1,
+    opacity: numeric(props.Visible, true) === false ? 0 : clamp(1 - groupTransparency, 0, 1),
   };
 
   if (isRoot) {
@@ -122,13 +271,28 @@ export function createNodeStyle(
       style.top = udimToCss(position.y, "0px");
     }
     if (anchor) {
-      style.transform = `translate(${-anchor.x * 100}%, ${-anchor.y * 100}%)`;
+      transforms.push(`translate(${-anchor.x * 100}%, ${-anchor.y * 100}%)`);
     }
   }
 
-  if (node.className !== "TextLabel" || numeric(props.BackgroundTransparency, 1) < 1) {
-    style.background = colorToCss(props.BackgroundColor3, "transparent", 1 - transparency);
+  const rotation = numeric(props.Rotation, 0);
+  if (rotation !== 0) {
+    transforms.push(`rotate(${rotation}deg)`);
   }
+
+  if (modifiers.scale !== undefined && modifiers.scale !== 1) {
+    transforms.push(`scale(${modifiers.scale})`);
+  }
+
+  if (transforms.length > 0) {
+    style.transform = transforms.join(" ");
+  }
+
+  style.background = colorToCss(
+    props.BackgroundColor3,
+    defaultBackgroundColor(node.className, 1 - transparency),
+    1 - transparency,
+  );
 
   if (modifiers.gradient) {
     style.background = modifiers.gradient;
@@ -139,7 +303,7 @@ export function createNodeStyle(
   }
 
   if (borderSize > 0) {
-    style.border = `${borderSize}px solid ${colorToCss(props.BorderColor3, "#000000")}`;
+    style.border = `${borderSize}px solid ${colorToCss(props.BorderColor3, ROBLOX_DEFAULT_BORDER)}`;
   }
 
   if (modifiers.stroke) {
@@ -161,29 +325,98 @@ export function createNodeStyle(
     style.display = "flex";
     style.flexDirection = modifiers.listLayout.direction;
     style.gap = modifiers.listLayout.gap;
-    style.justifyContent = alignmentToJustify(modifiers.listLayout.horizontal);
-    style.alignItems = alignmentToItems(modifiers.listLayout.vertical);
+    style.flexWrap = modifiers.listLayout.wraps ? "wrap" : "nowrap";
+    style.justifyContent = listMainAlignment(modifiers.listLayout);
+    style.alignItems = listCrossAlignment(modifiers.listLayout);
+    style.alignContent = lineAlignmentToContent(modifiers.listLayout.itemLineAlignment);
+  }
+
+  if (modifiers.gridLayout) {
+    style.display = "grid";
+    style.gridTemplateColumns = modifiers.gridLayout.maxCells
+      ? `repeat(${modifiers.gridLayout.maxCells}, minmax(0, ${modifiers.gridLayout.cellWidth}))`
+      : `repeat(auto-fill, minmax(${modifiers.gridLayout.cellWidth}, ${modifiers.gridLayout.cellWidth}))`;
+    style.gridAutoRows = modifiers.gridLayout.cellHeight;
+    style.columnGap = modifiers.gridLayout.gapX;
+    style.rowGap = modifiers.gridLayout.gapY;
+    style.justifyContent = alignmentToJustify(modifiers.gridLayout.horizontal);
+    style.alignContent = alignmentToContent(modifiers.gridLayout.vertical);
+    style.alignItems = "stretch";
+  }
+
+  if (modifiers.tableLayout) {
+    style.display = "grid";
+    style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+    style.columnGap = modifiers.tableLayout.gapX;
+    style.rowGap = modifiers.tableLayout.gapY;
+    style.justifyContent = alignmentToJustify(modifiers.tableLayout.horizontal);
+    style.alignContent = alignmentToContent(modifiers.tableLayout.vertical);
+  }
+
+  if (modifiers.pageLayout) {
+    style.display = "flex";
+    style.flexDirection = modifiers.pageLayout.direction;
+    style.gap = modifiers.pageLayout.gap;
+    style.justifyContent = alignmentToJustify(modifiers.pageLayout.horizontal);
+    style.alignItems = alignmentToItems(modifiers.pageLayout.vertical);
+    style.overflow = "hidden";
   }
 
   if (modifiers.aspectRatio) {
     style.aspectRatio = String(modifiers.aspectRatio);
   }
 
+  if (modifiers.sizeConstraint) {
+    if (modifiers.sizeConstraint.minWidth !== undefined) {
+      style.minWidth = `${modifiers.sizeConstraint.minWidth}px`;
+    }
+    if (modifiers.sizeConstraint.minHeight !== undefined) {
+      style.minHeight = `${modifiers.sizeConstraint.minHeight}px`;
+    }
+    if (modifiers.sizeConstraint.maxWidth !== undefined) {
+      style.maxWidth = `${modifiers.sizeConstraint.maxWidth}px`;
+    }
+    if (modifiers.sizeConstraint.maxHeight !== undefined) {
+      style.maxHeight = `${modifiers.sizeConstraint.maxHeight}px`;
+    }
+  }
+
+  if (modifiers.flexItem && parentHasLayout) {
+    applyFlexItemStyle(style, modifiers.flexItem);
+  }
+
   return style;
 }
 
-export function createTextStyle(node: RobloxVNode): CSSProperties {
+export function createTextStyle(node: RobloxVNode, modifiers: RobloxModifiers = {}): CSSProperties {
   const props = node.props;
   const textTransparency = numeric(props.TextTransparency, 0);
+  const textSize = clamp(
+    numeric(props.TextSize, 14),
+    modifiers.textSizeConstraint?.min ?? 0,
+    modifiers.textSizeConstraint?.max ?? Number.POSITIVE_INFINITY,
+  );
+  const strokeTransparency = numeric(props.TextStrokeTransparency, 1);
 
   return {
-    color: colorToCss(props.TextColor3, "#111827", 1 - textTransparency),
-    fontSize: `${numeric(props.TextSize, 16)}px`,
-    fontWeight: enumName(props.Font) === "Bold" ? 700 : 500,
+    color: colorToCss(props.TextColor3, ROBLOX_DEFAULT_TEXT, 1 - textTransparency),
+    fontFamily: ROBLOX_FONT_STACK,
+    fontSize: `${textSize}px`,
+    fontWeight: enumName(props.Font) === "Bold" ? 700 : 400,
+    justifyContent: textXAlignmentToJustify(enumName(props.TextXAlignment)),
     textAlign: textXAlignmentToCss(enumName(props.TextXAlignment)),
     alignItems: textYAlignmentToCss(enumName(props.TextYAlignment)),
     whiteSpace: props.TextWrapped === true ? "normal" : "nowrap",
-    lineHeight: 1.2,
+    lineHeight: "normal",
+    textOverflow: enumName(props.TextTruncate) === "AtEnd" ? "ellipsis" : undefined,
+    textShadow:
+      strokeTransparency < 1
+        ? `0 0 1px ${colorToCss(
+            props.TextStrokeColor3,
+            ROBLOX_DEFAULT_TEXT,
+            1 - strokeTransparency,
+          )}`
+        : undefined,
   };
 }
 
@@ -249,7 +482,10 @@ export function enumName(value: RobloxSerializedValue | undefined): string | und
   return undefined;
 }
 
-function colorSequenceToCss(value: RobloxSerializedValue | undefined): string | undefined {
+function colorSequenceToCss(
+  value: RobloxSerializedValue | undefined,
+  rotation = 0,
+): string | undefined {
   if (!isRecord(value) || value.$type !== "ColorSequence" || !Array.isArray(value.keypoints)) {
     return undefined;
   }
@@ -263,7 +499,7 @@ function colorSequenceToCss(value: RobloxSerializedValue | undefined): string | 
     })
     .filter(Boolean);
 
-  return stops.length > 0 ? `linear-gradient(90deg, ${stops.join(", ")})` : undefined;
+  return stops.length > 0 ? `linear-gradient(${90 + rotation}deg, ${stops.join(", ")})` : undefined;
 }
 
 function toUDim2(value: RobloxSerializedValue | undefined): RobloxUDim2 | undefined {
@@ -295,14 +531,20 @@ export function numeric(
 
 function textXAlignmentToCss(value: string | undefined): CSSProperties["textAlign"] {
   if (value === "Right") return "right";
-  if (value === "Center") return "center";
-  return "left";
+  if (value === "Left") return "left";
+  return "center";
+}
+
+function textXAlignmentToJustify(value: string | undefined): CSSProperties["justifyContent"] {
+  if (value === "Right") return "flex-end";
+  if (value === "Left") return "flex-start";
+  return "center";
 }
 
 function textYAlignmentToCss(value: string | undefined): CSSProperties["alignItems"] {
   if (value === "Bottom") return "flex-end";
-  if (value === "Center") return "center";
-  return "flex-start";
+  if (value === "Top") return "flex-start";
+  return "center";
 }
 
 function alignmentToJustify(value: string | undefined): CSSProperties["justifyContent"] {
@@ -317,9 +559,102 @@ function alignmentToItems(value: string | undefined): CSSProperties["alignItems"
   return "flex-start";
 }
 
+function alignmentToContent(value: string | undefined): CSSProperties["alignContent"] {
+  if (value === "Bottom") return "flex-end";
+  if (value === "Center") return "center";
+  return "flex-start";
+}
+
+function listMainAlignment(layout: NonNullable<RobloxModifiers["listLayout"]>): CSSProperties["justifyContent"] {
+  const mainFlex = layout.direction === "row" ? layout.horizontalFlex : layout.verticalFlex;
+  return flexAlignmentToJustify(mainFlex) ?? alignmentToJustify(
+    layout.direction === "row" ? layout.horizontal : layout.vertical,
+  );
+}
+
+function listCrossAlignment(layout: NonNullable<RobloxModifiers["listLayout"]>): CSSProperties["alignItems"] {
+  const crossFlex = layout.direction === "row" ? layout.verticalFlex : layout.horizontalFlex;
+  return flexAlignmentToItems(crossFlex) ?? alignmentToItems(
+    layout.direction === "row" ? layout.vertical : layout.horizontal,
+  );
+}
+
+function flexAlignmentToJustify(value: string | undefined): CSSProperties["justifyContent"] | undefined {
+  if (value === "SpaceBetween") return "space-between";
+  if (value === "SpaceAround") return "space-around";
+  if (value === "SpaceEvenly") return "space-evenly";
+  if (value === "Fill") return "space-between";
+  return undefined;
+}
+
+function flexAlignmentToItems(value: string | undefined): CSSProperties["alignItems"] | undefined {
+  if (value === "Fill") return "stretch";
+  return undefined;
+}
+
+function lineAlignmentToContent(value: string | undefined): CSSProperties["alignContent"] {
+  if (value === "Center") return "center";
+  if (value === "End") return "flex-end";
+  if (value === "Stretch") return "stretch";
+  return "flex-start";
+}
+
+function lineAlignmentToSelf(value: string | undefined): CSSProperties["alignSelf"] | undefined {
+  if (value === "Center") return "center";
+  if (value === "End") return "flex-end";
+  if (value === "Stretch") return "stretch";
+  if (value === "Start") return "flex-start";
+  return undefined;
+}
+
+function applyFlexItemStyle(
+  style: CSSProperties,
+  flexItem: NonNullable<RobloxModifiers["flexItem"]>,
+): void {
+  if (flexItem.mode === "Grow") {
+    style.flexGrow = 1;
+    style.flexShrink = 0;
+  } else if (flexItem.mode === "Shrink") {
+    style.flexGrow = 0;
+    style.flexShrink = 1;
+  } else if (flexItem.mode === "Fill") {
+    style.flexGrow = 1;
+    style.flexShrink = 1;
+  } else if (flexItem.mode === "Custom") {
+    style.flexGrow = flexItem.growRatio;
+    style.flexShrink = flexItem.shrinkRatio;
+  } else {
+    style.flexGrow = 0;
+    style.flexShrink = 0;
+  }
+
+  const alignSelf = lineAlignmentToSelf(flexItem.itemLineAlignment);
+  if (alignSelf) {
+    style.alignSelf = alignSelf;
+  }
+}
+
 function withAlpha(color: string, alpha: number): string {
   if (!color.startsWith("rgba(")) return color;
   return color.replace(/,\s*[\d.]+\)$/, `, ${clamp(alpha, 0, 1)})`);
+}
+
+function defaultBackgroundColor(className: string, alpha: number): string {
+  if (className === "ImageLabel" || className === "ImageButton") {
+    return "transparent";
+  }
+
+  return `rgba(${ROBLOX_DEFAULT_BACKGROUND.r}, ${ROBLOX_DEFAULT_BACKGROUND.g}, ${
+    ROBLOX_DEFAULT_BACKGROUND.b
+  }, ${clamp(alpha, 0, 1)})`;
+}
+
+function defaultBorderSize(className: string): number {
+  if (className === "ImageLabel" || className === "ImageButton") {
+    return 0;
+  }
+
+  return 1;
 }
 
 function clamp(value: number, min: number, max: number): number {

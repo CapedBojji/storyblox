@@ -26,6 +26,7 @@ export function getMissingConfigMessage(configPath: string): string {
     "",
     "export default defineConfig({",
     "  root: \"src\",",
+    "  storyRoot: \"out\", // optional; defaults to root",
     "  rojoProject: \"default.project.json\",",
     "  storyPatterns: [\"**/*.story.lua\", \"**/*.story.luau\", \"**/*.stories.lua\", \"**/*.stories.luau\"],",
     "  storybookPatterns: [\"**/*.storybook.lua\", \"**/*.storybook.luau\"],",
@@ -82,6 +83,7 @@ export function normalizeConfig(
     projectRoot,
     configPath,
     root: resolve(projectRoot, input.root),
+    storyRoot: resolve(projectRoot, input.storyRoot ?? input.root),
     rojoProject: resolve(projectRoot, input.rojoProject),
     storyPatterns: input.storyPatterns?.length ? input.storyPatterns : DEFAULT_STORY_PATTERNS,
     storybookPatterns: input.storybookPatterns?.length

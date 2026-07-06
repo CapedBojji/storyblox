@@ -32,6 +32,17 @@ export type ClientAssetMode =
 
 export function resolveClientAssets(): ClientAssetMode {
   const here = dirname(fileURLToPath(import.meta.url));
+  const builtRoot = resolve(here, "../client");
+  const builtIndex = resolve(builtRoot, "index.html");
+
+  if (existsSync(builtIndex)) {
+    return {
+      mode: "static",
+      root: builtRoot,
+      indexHtml: builtIndex,
+    };
+  }
+
   const sourceRoot = resolve(here, "../..");
   const sourceIndex = resolve(sourceRoot, "index.html");
   const sourceConfig = resolve(sourceRoot, "vite.config.ts");
@@ -41,17 +52,6 @@ export function resolveClientAssets(): ClientAssetMode {
       mode: "vite",
       root: sourceRoot,
       configFile: sourceConfig,
-    };
-  }
-
-  const builtRoot = resolve(here, "../client");
-  const builtIndex = resolve(builtRoot, "index.html");
-
-  if (existsSync(builtIndex)) {
-    return {
-      mode: "static",
-      root: builtRoot,
-      indexHtml: builtIndex,
     };
   }
 

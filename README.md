@@ -1,6 +1,6 @@
-# UI Claps
+# StoryBlox
 
-UI Claps is a web story renderer for Roblox UI. It discovers Luau story modules,
+StoryBlox is a web story renderer for Roblox UI. It discovers Luau story modules,
 evaluates them through an installed `zune` binary, and renders the returned
 virtual Roblox UI tree in a browser with DOM/CSS.
 
@@ -17,20 +17,20 @@ After building or installing the package, the `ui-claps` binary can run a projec
 folder directly:
 
 ```sh
-ui-claps dev ./path/to/project
+storyblox dev ./path/to/project
 ```
 
 That folder should contain `ui-claps.config.ts`. You can still pass a config file
 explicitly when needed:
 
 ```sh
-ui-claps dev --config ./path/to/ui-claps.config.ts
+storyblox dev --config ./path/to/ui-claps.config.ts
 ```
 
 Stories export a table with `name`, optional `controls`, and `render(props)`.
 
 ```lua
-local UI = require("@ui-claps/adapter")
+local UI = require("@storyblox/adapter")
 
 return {
   name = "Primary Button",
@@ -53,7 +53,7 @@ For roblox-ts projects, write the story in TypeScript, build it with roblox-ts,
 and point UI Claps at the compiled Luau directory:
 
 ```ts
-import type { UiClapsStory } from "ui-claps/roblox-ts";
+import type { UiClapsStory } from "storyblox/roblox-ts";
 
 const controls = {
   text: UIClaps.control.string("Click me"),
@@ -77,7 +77,7 @@ export = story;
 ```
 
 ```ts
-import { defineConfig } from "ui-claps";
+import { defineConfig } from "storyblox";
 
 export default defineConfig({
   root: "src",
@@ -86,13 +86,13 @@ export default defineConfig({
 });
 ```
 
-`root` is the source project root. `storyRoot` is where UI Claps searches for
+`root` is the source project root. `storyRoot` is where StoryBlox searches for
 compiled `.story.luau` files; it defaults to `root` for plain Luau projects.
 Use `UIClaps.control.udim(...)` and `UIClaps.control.udim2(...)` for Roblox
 scale/offset values instead of splitting dimensions across loose number sliders.
 
 Rovy projects can use the first-party Rovy story adapter. The story provides the
-project app bootstrap explicitly, while `runtime` lets UI Claps prepare optional
+project app bootstrap explicitly, while `runtime` lets StoryBlox prepare optional
 Rovy UI or custom runtime context before `render`.
 
 ```ts
